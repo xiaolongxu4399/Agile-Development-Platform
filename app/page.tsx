@@ -1,57 +1,36 @@
-// 占位页：登录界面骨架
-// 目前只是静态 UI，接入 Auth.js 后这里的表单才会真正生效。
+"use client";
+
+import { useMemo, useState } from "react";
+
+type Task = { id: number; title: string; status: "todo" | "doing" | "done"; priority: "高" | "中" | "低" };
+type Project = { id: number; name: string; description: string; tasks: Task[] };
+type Team = { id: number; name: string; members: number; projects: Project[] };
+
+const initialTeams: Team[] = [{ id: 1, name: "敏捷校园研发组", members: 6, projects: [{ id: 1, name: "AgileCampus 平台", description: "高校团队项目协作平台", tasks: [{ id: 1, title: "完成需求分析", status: "done", priority: "高" }, { id: 2, title: "设计任务看板", status: "doing", priority: "高" }, { id: 3, title: "建立数据库模型", status: "todo", priority: "中" }] }] }];
 
 export default function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F3F1EA] px-4 text-[#1A1913]">
-      <div className="w-full max-w-sm rounded-2xl border border-[#E8E3D8] bg-white p-8 shadow-sm">
-        {/* 品牌标识 */}
-        <div className="flex flex-col items-center text-center">
-          <span className="grid h-12 w-12 place-items-center rounded-xl bg-[#294A78] font-serif text-2xl font-bold text-white">
-            A
-          </span>
-          <h1 className="mt-4 font-serif text-xl font-semibold">AgileCampus</h1>
-          <p className="mt-1 text-sm text-[#928B7E]">敏捷校园 · 项目协作平台</p>
-        </div>
+  const [teams, setTeams] = useState(initialTeams);
+  const [teamId, setTeamId] = useState(1);
+  const [projectId, setProjectId] = useState(1);
+  const [view, setView] = useState<"overview" | "projects" | "tasks">("overview");
+  const [showTeam, setShowTeam] = useState(false);
+  const [showProject, setShowProject] = useState(false);
+  const [showTask, setShowTask] = useState(false);
+  const team = teams.find((item) => item.id === teamId) ?? teams[0];
+  const project = team?.projects.find((item) => item.id === projectId) ?? team?.projects[0];
+  const allTasks = useMemo(() => team?.projects.flatMap((item) => item.tasks) ?? [], [team]);
 
-        {/* 登录表单（占位，暂未接入真实登录） */}
-        <form className="mt-8 space-y-4">
-          <div>
-            <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-[#514C43]">
-              邮箱
-            </label>
-            <input
-              id="email"
-              type="email"
-              placeholder="you@example.com"
-              className="w-full rounded-lg border border-[#D8D1C2] bg-white px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[#B5AEA0] focus:border-[#294A78] focus:ring-2 focus:ring-[#BCCCEA]"
-            />
-          </div>
+  function addTeam(name: string) { if (!name.trim()) return; const id = Date.now(); setTeams([...teams, { id, name, members: 1, projects: [] }]); setTeamId(id); setView("projects"); setShowTeam(false); }
+  function addProject(name: string, description: string) { if (!name.trim() || !team) return; const id = Date.now(); setTeams(teams.map((item) => item.id === team.id ? { ...item, projects: [...item.projects, { id, name, description, tasks: [] }] } : item)); setProjectId(id); setView("tasks"); setShowProject(false); }
+  function addTask(title: string, priority: Task["priority"]) { if (!title.trim() || !team || !project) return; const task: Task = { id: Date.now(), title, priority, status: "todo" }; setTeams(teams.map((item) => item.id === team.id ? { ...item, projects: item.projects.map((p) => p.id === project.id ? { ...p, tasks: [...p.tasks, task] } : p) } : item)); setShowTask(false); }
+  function updateTask(id: number, status: Task["status"]) { if (!team || !project) return; setTeams(teams.map((item) => item.id === team.id ? { ...item, projects: item.projects.map((p) => p.id === project.id ? { ...p, tasks: p.tasks.map((task) => task.id === id ? { ...task, status } : task) } : p) } : item)); }
 
-          <div>
-            <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-[#514C43]">
-              密码
-            </label>
-            <input
-              id="password"
-              type="password"
-              placeholder="••••••••"
-              className="w-full rounded-lg border border-[#D8D1C2] bg-white px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-[#B5AEA0] focus:border-[#294A78] focus:ring-2 focus:ring-[#BCCCEA]"
-            />
-          </div>
-
-          <button
-            type="button"
-            className="w-full rounded-lg bg-[#294A78] py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1E3A60]"
-          >
-            登录
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-xs text-[#928B7E]">
-          占位页面 · 登录功能将在接入 Auth.js 后启用
-        </p>
-      </div>
-    </div>
-  );
+  return <main className="workspace"><aside className="sidebar"><div className="app-brand"><span>A</span><div><b>AgileCampus</b><small>敏捷项目工作台</small></div></div><button className="team-switcher" onClick={() => setShowTeam(true)}><span className="team-avatar">{team?.name[0] ?? "T"}</span><span>{team?.name ?? "选择团队"}</span><b>⌄</b></button><nav><button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>⌂　工作概览</button><button className={view === "projects" ? "active" : ""} onClick={() => setView("projects")}>▦　项目管理</button><button className={view === "tasks" ? "active" : ""} onClick={() => setView("tasks")}>✓　我的任务</button></nav><div className="sidebar-bottom"><button onClick={() => setShowTeam(true)}>＋ 新建团队</button><span>当前用户<br /><b>项目管理员</b></span></div></aside><section className="content"><header><div><span className="breadcrumb">{team?.name}　/　{view === "tasks" ? project?.name : view === "projects" ? "项目管理" : "工作概览"}</span><h1>{view === "overview" ? "工作概览" : view === "projects" ? "项目管理" : project?.name ?? "任务管理"}</h1></div><div className="header-actions"><span className="bell">♧</span><span className="user-avatar">管</span></div></header>{view === "overview" && <Overview team={team} tasks={allTasks} onProject={() => setView("projects")} onTask={() => setView("tasks")} />} {view === "projects" && <Projects team={team} onSelect={(id) => { setProjectId(id); setView("tasks"); }} onCreate={() => setShowProject(true)} />} {view === "tasks" && project && <Tasks project={project} onCreate={() => setShowTask(true)} onUpdate={updateTask} />}</section>{showTeam && <Modal title="新建团队" onClose={() => setShowTeam(false)}><Form onSubmit={(v) => addTeam(v.name)} fields={[{ name: "name", label: "团队名称", placeholder: "例如：产品设计组" }]} submit="创建团队" /></Modal>}{showProject && <Modal title="新建项目" onClose={() => setShowProject(false)}><Form onSubmit={(v) => addProject(v.name, v.description)} fields={[{ name: "name", label: "项目名称", placeholder: "例如：实验室预约系统" }, { name: "description", label: "项目描述", placeholder: "简要描述项目目标" }]} submit="创建项目" /></Modal>}{showTask && <Modal title="新建任务" onClose={() => setShowTask(false)}><Form onSubmit={(v) => addTask(v.name, v.priority as Task["priority"])} fields={[{ name: "name", label: "任务名称", placeholder: "例如：完成登录页面" }, { name: "priority", label: "优先级", placeholder: "高 / 中 / 低" }]} submit="创建任务" /></Modal>}</main>;
 }
+
+function Overview({ team, tasks, onProject, onTask }: { team: Team; tasks: Task[]; onProject: () => void; onTask: () => void }) { const done = tasks.filter((t) => t.status === "done").length; return <><div className="welcome"><div><span className="eyebrow">GOOD MORNING</span><h2>今天也一起推进项目吧。</h2><p>这里是 {team.name} 的协作空间，快速查看团队项目和任务进度。</p></div><span className="welcome-icon">✦</span></div><div className="stats-row"><div><small>项目总数</small><strong>{team.projects.length}</strong><span>个项目</span></div><div><small>任务总数</small><strong>{tasks.length}</strong><span>项任务</span></div><div><small>已完成</small><strong>{done}</strong><span>项任务</span></div><div><small>团队成员</small><strong>{team.members}</strong><span>位成员</span></div></div><div className="section-title"><h2>最近项目</h2><button onClick={onProject}>查看全部 →</button></div><div className="project-grid">{team.projects.slice(0, 3).map((p) => <ProjectCard key={p.id} project={p} onClick={() => onTask()} />)}<button className="add-card" onClick={onProject}>＋<span>管理项目</span></button></div></> }
+function Projects({ team, onSelect, onCreate }: { team: Team; onSelect: (id: number) => void; onCreate: () => void }) { return <><div className="page-toolbar"><p>管理团队中的项目，进入项目后即可维护任务。</p><button className="primary" onClick={onCreate}>＋ 新建项目</button></div><div className="project-list">{team.projects.map((p) => <ProjectCard key={p.id} project={p} onClick={() => onSelect(p.id)} />)}{team.projects.length === 0 && <div className="empty">还没有项目，先创建一个项目吧。</div>}</div></> }
+function ProjectCard({ project, onClick }: { project: Project; onClick: () => void }) { const done = project.tasks.filter((t) => t.status === "done").length; const percent = project.tasks.length ? Math.round(done / project.tasks.length * 100) : 0; return <button className="project-card" onClick={onClick}><div className="card-top"><span className="project-icon">▦</span><span className="more">•••</span></div><h3>{project.name}</h3><p>{project.description}</p><div className="card-meta"><span>{project.tasks.length} 项任务</span><b>{percent}%</b></div><div className="progress"><i style={{ width: `${percent}%` }} /></div></button> }
+function Tasks({ project, onCreate, onUpdate }: { project: Project; onCreate: () => void; onUpdate: (id: number, status: Task["status"]) => void }) { const groups: [Task["status"], string][] = [["todo", "待处理"], ["doing", "进行中"], ["done", "已完成"]]; return <><div className="page-toolbar"><p>{project.description}</p><button className="primary" onClick={onCreate}>＋ 新建任务</button></div><div className="board">{groups.map(([status, label]) => <div className="column" key={status}><div className="column-title"><b>{label}</b><span>{project.tasks.filter((t) => t.status === status).length}</span></div>{project.tasks.filter((t) => t.status === status).map((task) => <article className="task-card" key={task.id}><div><span className={`priority ${task.priority === "高" ? "high" : task.priority === "中" ? "medium" : "low"}`}>{task.priority}优先级</span><span className="task-menu">•••</span></div><h3>{task.title}</h3><small>指派给　未分配</small><select value={task.status} onChange={(e) => onUpdate(task.id, e.target.value as Task["status"])} aria-label="任务状态"><option value="todo">移动到：待处理</option><option value="doing">移动到：进行中</option><option value="done">移动到：已完成</option></select></article>)}</div>)}</div></> }
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { return <div className="modal-backdrop"><div className="modal"><button className="close" onClick={onClose}>×</button><h2>{title}</h2>{children}</div></div> }
+function Form({ fields, onSubmit, submit }: { fields: { name: string; label: string; placeholder: string }[]; onSubmit: (v: Record<string, string>) => void; submit: string }) { const [values, setValues] = useState<Record<string, string>>({}); return <form onSubmit={(e) => { e.preventDefault(); onSubmit(values); }}><div className="form-fields">{fields.map((field) => <label key={field.name}>{field.label}<input required value={values[field.name] ?? ""} placeholder={field.placeholder} onChange={(e) => setValues({ ...values, [field.name]: e.target.value })} /></label>)}</div><button className="primary full" type="submit">{submit}</button></form> }
