@@ -1,14 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type Task = { id: number; title: string; status: "todo" | "doing" | "done"; priority: "高" | "中" | "低" };
 type Project = { id: number; name: string; description: string; tasks: Task[] };
 type Team = { id: number; name: string; members: number; projects: Project[] };
+type User = { id: number; name: string | null; studentId: string; role: string };
 
 const initialTeams: Team[] = [{ id: 1, name: "敏捷校园研发组", members: 6, projects: [{ id: 1, name: "AgileCampus 平台", description: "高校团队项目协作平台", tasks: [{ id: 1, title: "完成需求分析", status: "done", priority: "高" }, { id: 2, title: "设计任务看板", status: "doing", priority: "高" }, { id: 3, title: "建立数据库模型", status: "todo", priority: "中" }] }] }];
 
 export default function Home() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);   // 登录态加载中
+  const [showMenu, setShowMenu] = useState(false);         // 右上角头像菜单（微信/QQ 式下拉）
   const [teams, setTeams] = useState(initialTeams);
   const [teamId, setTeamId] = useState(1);
   const [projectId, setProjectId] = useState(1);
@@ -16,6 +22,22 @@ export default function Home() {
   const [showTeam, setShowTeam] = useState(false);
   const [showProject, setShowProject] = useState(false);
   const [showTask, setShowTask] = useState(false);
+
+  // 登录检查：未登录一律送回登录页；登录后头像菜单显示本人姓名
+  useEffect(() => {
+    fetch("/api/auth/me").then(async (res) => {
+      if (!res.ok) { router.replace("/login"); return; }
+      const data = await res.json();
+      setUser(data.user);
+    }).finally(() => setAuthLoading(false));
+  }, [router]);
+
+  // 退出用户：删除会话后回登录页，之后才能登录新用户
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.replace("/login");
+  }
+
   const team = teams.find((item) => item.id === teamId) ?? teams[0];
   const project = team?.projects.find((item) => item.id === projectId) ?? team?.projects[0];
   const allTasks = useMemo(() => team?.projects.flatMap((item) => item.tasks) ?? [], [team]);
@@ -25,7 +47,13 @@ export default function Home() {
   function addTask(title: string, priority: Task["priority"]) { if (!title.trim() || !team || !project) return; const task: Task = { id: Date.now(), title, priority, status: "todo" }; setTeams(teams.map((item) => item.id === team.id ? { ...item, projects: item.projects.map((p) => p.id === project.id ? { ...p, tasks: [...p.tasks, task] } : p) } : item)); setShowTask(false); }
   function updateTask(id: number, status: Task["status"]) { if (!team || !project) return; setTeams(teams.map((item) => item.id === team.id ? { ...item, projects: item.projects.map((p) => p.id === project.id ? { ...p, tasks: p.tasks.map((task) => task.id === id ? { ...task, status } : task) } : p) } : item)); }
 
-  return <main className="workspace"><aside className="sidebar"><div className="app-brand"><span>A</span><div><b>AgileCampus</b><small>敏捷项目工作台</small></div></div><button className="team-switcher" onClick={() => setShowTeam(true)}><span className="team-avatar">{team?.name[0] ?? "T"}</span><span>{team?.name ?? "选择团队"}</span><b>⌄</b></button><nav><button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>⌂　工作概览</button><button className={view === "projects" ? "active" : ""} onClick={() => setView("projects")}>▦　项目管理</button><button className={view === "tasks" ? "active" : ""} onClick={() => setView("tasks")}>✓　我的任务</button></nav><div className="sidebar-bottom"><button onClick={() => setShowTeam(true)}>＋ 新建团队</button><span>当前用户<br /><b>项目管理员</b></span></div></aside><section className="content"><header><div><span className="breadcrumb">{team?.name}　/　{view === "tasks" ? project?.name : view === "projects" ? "项目管理" : "工作概览"}</span><h1>{view === "overview" ? "工作概览" : view === "projects" ? "项目管理" : project?.name ?? "任务管理"}</h1></div><div className="header-actions"><span className="bell">♧</span><span className="user-avatar">管</span></div></header>{view === "overview" && <Overview team={team} tasks={allTasks} onProject={() => setView("projects")} onTask={() => setView("tasks")} />} {view === "projects" && <Projects team={team} onSelect={(id) => { setProjectId(id); setView("tasks"); }} onCreate={() => setShowProject(true)} />} {view === "tasks" && project && <Tasks project={project} onCreate={() => setShowTask(true)} onUpdate={updateTask} />}</section>{showTeam && <Modal title="新建团队" onClose={() => setShowTeam(false)}><Form onSubmit={(v) => addTeam(v.name)} fields={[{ name: "name", label: "团队名称", placeholder: "例如：产品设计组" }]} submit="创建团队" /></Modal>}{showProject && <Modal title="新建项目" onClose={() => setShowProject(false)}><Form onSubmit={(v) => addProject(v.name, v.description)} fields={[{ name: "name", label: "项目名称", placeholder: "例如：实验室预约系统" }, { name: "description", label: "项目描述", placeholder: "简要描述项目目标" }]} submit="创建项目" /></Modal>}{showTask && <Modal title="新建任务" onClose={() => setShowTask(false)}><Form onSubmit={(v) => addTask(v.name, v.priority as Task["priority"])} fields={[{ name: "name", label: "任务名称", placeholder: "例如：完成登录页面" }, { name: "priority", label: "优先级", placeholder: "高 / 中 / 低" }]} submit="创建任务" /></Modal>}</main>;
+  // 登录态确认前先不渲染工作台，避免未登录用户看到内容闪一下
+  if (authLoading || !user) return null;
+
+  // 展示名称：未设置名称时回落显示学工号（注册不强制实名）
+  const displayName = user.name || user.studentId;
+
+  return <main className="workspace"><aside className="sidebar"><div className="app-brand"><span>A</span><div><b>AgileCampus</b><small>敏捷项目工作台</small></div></div><button className="team-switcher" onClick={() => setShowTeam(true)}><span className="team-avatar">{team?.name[0] ?? "T"}</span><span>{team?.name ?? "选择团队"}</span><b>⌄</b></button><nav><button className={view === "overview" ? "active" : ""} onClick={() => setView("overview")}>⌂　工作概览</button><button className={view === "projects" ? "active" : ""} onClick={() => setView("projects")}>▦　项目管理</button><button className={view === "tasks" ? "active" : ""} onClick={() => setView("tasks")}>✓　我的任务</button></nav><div className="sidebar-bottom"><button onClick={() => setShowTeam(true)}>＋ 新建团队</button><span>当前用户<br /><b>{displayName}　{user.role === "admin" ? "管理员" : "成员"}</b></span></div></aside><section className="content"><header><div><span className="breadcrumb">{team?.name}　/　{view === "tasks" ? project?.name : view === "projects" ? "项目管理" : "工作概览"}</span><h1>{view === "overview" ? "工作概览" : view === "projects" ? "项目管理" : project?.name ?? "任务管理"}</h1></div><div className="header-actions"><span className="bell">♧</span><div className="avatar-wrap">{showMenu && <div className="menu-backdrop" onClick={() => setShowMenu(false)} />}<button className="user-avatar" title={displayName} onClick={() => setShowMenu(!showMenu)}>{displayName[0]}</button><div className="avatar-name">{displayName}</div>{showMenu && <div className="avatar-menu"><div className="menu-header"><b>{displayName}</b><small>{user.role === "admin" ? "项目管理员" : "项目成员"}</small></div><button onClick={() => router.push("/settings")}>⚙　个人设置</button><button onClick={logout}>⏻　退出用户</button></div>}</div></div></header>{view === "overview" && <Overview team={team} tasks={allTasks} onProject={() => setView("projects")} onTask={() => setView("tasks")} />} {view === "projects" && <Projects team={team} onSelect={(id) => { setProjectId(id); setView("tasks"); }} onCreate={() => setShowProject(true)} />} {view === "tasks" && project && <Tasks project={project} onCreate={() => setShowTask(true)} onUpdate={updateTask} />}</section>{showTeam && <Modal title="新建团队" onClose={() => setShowTeam(false)}><Form onSubmit={(v) => addTeam(v.name)} fields={[{ name: "name", label: "团队名称", placeholder: "例如：产品设计组" }]} submit="创建团队" /></Modal>}{showProject && <Modal title="新建项目" onClose={() => setShowProject(false)}><Form onSubmit={(v) => addProject(v.name, v.description)} fields={[{ name: "name", label: "项目名称", placeholder: "例如：实验室预约系统" }, { name: "description", label: "项目描述", placeholder: "简要描述项目目标" }]} submit="创建项目" /></Modal>}{showTask && <Modal title="新建任务" onClose={() => setShowTask(false)}><Form onSubmit={(v) => addTask(v.name, v.priority as Task["priority"])} fields={[{ name: "name", label: "任务名称", placeholder: "例如：完成登录页面" }, { name: "priority", label: "优先级", placeholder: "高 / 中 / 低" }]} submit="创建任务" /></Modal>}</main>;
 }
 
 function Overview({ team, tasks, onProject, onTask }: { team: Team; tasks: Task[]; onProject: () => void; onTask: () => void }) { const done = tasks.filter((t) => t.status === "done").length; return <><div className="welcome"><div><span className="eyebrow">GOOD MORNING</span><h2>今天也一起推进项目吧。</h2><p>这里是 {team.name} 的协作空间，快速查看团队项目和任务进度。</p></div><span className="welcome-icon">✦</span></div><div className="stats-row"><div><small>项目总数</small><strong>{team.projects.length}</strong><span>个项目</span></div><div><small>任务总数</small><strong>{tasks.length}</strong><span>项任务</span></div><div><small>已完成</small><strong>{done}</strong><span>项任务</span></div><div><small>团队成员</small><strong>{team.members}</strong><span>位成员</span></div></div><div className="section-title"><h2>最近项目</h2><button onClick={onProject}>查看全部 →</button></div><div className="project-grid">{team.projects.slice(0, 3).map((p) => <ProjectCard key={p.id} project={p} onClick={() => onTask()} />)}<button className="add-card" onClick={onProject}>＋<span>管理项目</span></button></div></> }
