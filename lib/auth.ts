@@ -48,15 +48,24 @@ export function readToken(request: Request): string | null {
 }
 
 // 当前登录用户：会话有效则返回用户（不含密码），否则 null
+// 顺带滚动更新会话活跃时间（节流 5 分钟），供成员在线状态使用
 export async function getSessionUser(request: Request) {
   const token = readToken(request);
   if (!token) return null;
+  const now = new Date();
   const rows = await db
     .select({ id: users.id, email: users.email, name: users.name, studentId: users.studentId,
-      gender: users.gender, region: users.region, bio: users.bio, role: users.role })
+      gender: users.gender, region: users.region, bio: users.bio, role: users.role,
+      lastActiveAt: sessions.lastActiveAt })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.token, token), gt(sessions.expiresAt, new Date())))
+    .where(and(eq(sessions.token, token), gt(sessions.expiresAt, now)))
     .limit(1);
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  const { lastActiveAt, ...user } = row;
+  if (!lastActiveAt || now.getTime() - new Date(lastActiveAt).getTime() > 5 * 60_000) {
+    await db.update(sessions).set({ lastActiveAt: now }).where(eq(sessions.token, token));
+  }
+  return user;
 }
