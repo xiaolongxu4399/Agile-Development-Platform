@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 上传的附件（本地存储，不入库不入 Git）
+/uploads
