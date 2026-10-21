@@ -4,7 +4,7 @@
 import { createContext, useContext } from "react";
 import type {
   Me, Team, ProjectSummary, ProjectDetail, TaskItem, ChatMessage,
-  ActivityItem, FileItem, NotificationItem, Overview,
+  ActivityItem, FileItem, NotificationItem, Overview, DmConversation,
 } from "@/lib/api-client";
 
 /* ---------- 图标（feather 风格线条图标，stroke 继承 currentColor） ---------- */
@@ -29,6 +29,8 @@ const ICON_PATHS: Record<string, string> = {
   x: "M18 6L6 18M6 6l12 12",
   pin: "M12 17v5M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 2 2 0 002-2v-.58a.42.42 0 00-.42-.42H6.42a.42.42 0 00-.42.42V4a2 2 0 002 2 1 1 0 011 1z",
   message: "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
+  book: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z",
   file: "M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9zM13 2v7h7",
   filter: "M22 3H2l8 9.46V19l4 2v-8.54L22 3z",
   logout: "M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9",
@@ -80,7 +82,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 }
 
 /* ---------- 工作空间状态（page.tsx 提供实现） ---------- */
-export type RailView = "projects" | "todos" | "notifications" | "projectManagement" | "teamManagement";
+export type RailView = "projects" | "todos" | "notifications" | "projectManagement" | "teamManagement" | "messages" | "docs";
 export type FocusSection = "tasks" | "chat" | "space";
 export type ModalState =
   | { type: "newTeam" }
@@ -108,6 +110,14 @@ export interface WorkspaceStore {
   notifications: NotificationItem[];
   unreadCount: number;
   overview: Overview | null;
+  dmConversations: DmConversation[];
+  dmUnreadTotal: number;
+  dmTargetId: number | null;
+  refreshDms(): Promise<void>;
+  openDmConversation(id: number): void;
+  openDmWithPeer(peerId: number): Promise<void>;
+  hideDmConversation(id: number): Promise<void>;
+  deleteDmConversation(id: number): Promise<void>;
   taskSearch: string;
   setTaskSearch(q: string): void;
   selectProject(id: number | null): void;

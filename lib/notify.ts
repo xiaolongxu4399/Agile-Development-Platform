@@ -7,9 +7,9 @@ import { notifications } from "@/db/schema";
 export async function notify(input: {
   userId: number;
   actorId: number;
-  type: "assigned" | "mention" | "comment";
+  type: "assigned" | "mention" | "comment" | "dm";
   title: string;
-  entityType?: "task" | "project";
+  entityType?: "task" | "project" | "dm";
   entityId?: number;
   includeActor?: boolean;
 }, executor: Pick<typeof db, "insert"> = db) {

@@ -101,6 +101,35 @@ npm run dev                 # 启动 http://localhost:3000
 | POST | `/api/projects/[id]/files` | `multipart/form-data`：`file`（≤20MB）+ 可选 `taskId`；存本地 `uploads/`（已 gitignore） |
 | GET | `/api/files/[id]` | 下载（校验团队成员身份，中文文件名正常） |
 
+### 私聊（v5 新增）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/dm` | 登录 | 我的会话列表（对方资料、最后一条消息摘要、未读数、`unreadTotal`），按最后活跃倒序；我方隐藏的会话不返回 |
+| POST | `/api/dm` | 登录 | `{ peerId }` 与同团队成员打开（或创建）一对一会话；非同团队返回 403；重新发起会自动取消我方的隐藏 |
+| GET | `/api/dm/contacts` | 登录 | 可私聊的联系人 = 我所有团队的其他成员（去重，在线优先排序） |
+| GET | `/api/dm/[id]/messages?afterId=` | 会话双方 | 最新 80 条（时间正序）；`afterId` 增量拉取 |
+| POST | `/api/dm/[id]/messages` | 会话双方 | `{ content }`（≤2000 字）；发送后通知对方（点击通知直达会话）；若对方隐藏过会话则自动恢复显示 |
+| PUT | `/api/dm/[id]/read` | 会话双方 | 标记对方发来的未读消息为已读（幂等），返回 `{ updated }` |
+| PUT | `/api/dm/[id]/hide` | 会话双方 | 隐藏会话（仅从我的列表移除，消息保留）；对方来新消息或我重新发起时自动恢复 |
+| DELETE | `/api/dm/[id]` | 会话双方 | 删除会话：清空双方全部消息（级联），并清理关联私信通知，双方列表同时消失 |
+
+消息对象含 `mine`（是否我发的）与 `readAt`（对方阅读时间，null 即未读，用于已读回执）。同一对用户只存一条会话（`user_a_id < user_b_id` 唯一约束）。
+
+### 云文档（v5 新增）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/docs?projectId=` | 登录 | 我可访问的文档（即我所在团队全部项目的文档），按更新时间倒序 |
+| POST | `/api/docs` | 项目成员 | `{ projectId, title, content? }` 新建；写入项目日志 |
+| GET | `/api/docs/[id]` | 项目成员 | 文档全文（含 `canDelete`、创建者/更新者） |
+| PUT | `/api/docs/[id]` | 项目成员 | `{ title?, content? }` 保存；内容有变化时先快照旧版本（每篇保留最近 20 版） |
+| DELETE | `/api/docs/[id]` | 创建者/admin | 删除文档（级联删历史版本），写入项目日志 |
+| GET | `/api/docs/[id]/versions` | 项目成员 | 历史版本列表（新→旧，含全文与摘要） |
+| POST | `/api/docs/[id]/versions` | 项目成员 | `{ versionId }` 恢复到指定版本；当前内容先快照，恢复本身可撤销 |
+
+正文为 Markdown 子集（标题/粗斜体/行内代码/代码块/列表/引用/分隔线/http(s) 链接），渲染前整体 HTML 转义，无原始 HTML 注入。文档标题 ≤80 字，正文 ≤20 万字符。
+
 ### 项目日志 / 通知 / 标签
 
 | 方法 | 路径 | 说明 |
@@ -134,13 +163,15 @@ curl -b jar.txt -X POST localhost:3000/api/projects/1/files \
   -F "file=@需求说明.pdf" -F "taskId=5"
 ```
 
-## 数据模型（17 张表）
+## 数据模型（21 张表）
 
-`users`、`sessions`（v1 原有）+ `teams`、`team_members`、`projects`、`project_members`、`project_stars`、`sprints`、`tasks`、`labels`、`task_labels`、`comments`、`chat_messages`、`chat_likes`、`activities`、`notifications`、`attachments`。字段定义见 `db/schema.ts`（含中文注释）。
+`users`、`sessions`（v1 原有）+ `teams`、`team_members`、`projects`、`project_members`、`project_stars`、`sprints`、`tasks`、`labels`、`task_labels`、`comments`、`chat_messages`、`chat_likes`、`activities`、`notifications`、`attachments`，以及 v5 新增的 `dm_conversations`、`dm_messages`、`docs`、`doc_versions`。字段定义见 `db/schema.ts`（含中文注释）。
 
 ## 已知边界（当前版本）
 
-- 聊天为轮询（建议前端 8 秒 `?afterId=` 增量），无 WebSocket 实时推送。
+- 聊天与私聊均为轮询（建议前端 8 秒 `?afterId=` 增量），无 WebSocket 实时推送。
 - 附件存服务器本地 `uploads/` 目录，重启不丢但随机器走，未接对象存储。
 - 「待办」即 `GET /api/tasks?mine=1&status=todo,doing` 的视图，无独立表。
 - 通知不含"临期/逾期"类型（需要定时任务，后续版本）。
+- 云文档为「编辑锁靠最后写入胜出」：两人同时编辑同一篇时以后保存的为准（历史版本可找回先保存一方的内容）；无协同光标。
+- 私聊未读回执只到「已读/未读」，无逐条已读列表；联系人范围限于同团队。

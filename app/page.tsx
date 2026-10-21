@@ -9,6 +9,7 @@ import {
   api, ApiError, uploadFile as apiUpload,
   type Me, type Team, type ProjectSummary, type ProjectDetail, type TaskItem,
   type ChatMessage, type ActivityItem, type FileItem, type NotificationItem, type Overview,
+  type DmConversation,
 } from "@/lib/api-client";
 import { WorkspaceContext, type WorkspaceStore, type RailView, type FocusSection, type ModalState } from "@/components/ws/shared";
 import { IconRail } from "@/components/ws/IconRail";
@@ -16,6 +17,9 @@ import { ProjectSidebar } from "@/components/ws/ProjectSidebar";
 import { TopBar } from "@/components/ws/TopBar";
 import { TaskPanel, TodosView, NotificationsView, TaskDrawer, NewTaskModal } from "@/components/ws/TaskPanel";
 import { ChatPanel } from "@/components/ws/ChatPanel";
+import { MessagesPanel } from "@/components/ws/MessagesPanel";
+import { DocsPanel } from "@/components/ws/DocsPanel";
+import { ScaleFrame } from "@/components/ws/ScaleFrame";
 import { ManagementPanel } from "@/components/ws/ManagementPanel";
 import { ProjectActivitySidebar } from "@/components/ws/ProjectActivitySidebar";
 import { SpacePanel, NewSprintModal, InviteModal } from "@/components/ws/SpacePanel";
@@ -25,7 +29,7 @@ import { RequestGate } from "@/lib/request-gate";
 import { startPolling } from "@/lib/polling";
 
 const projectResources = ["detail", "tasks", "chat", "activities", "files"];
-const resourceNames: Record<string, string> = { projects: "项目列表", teams: "团队列表", overview: "统计", notifications: "通知", myTasks: "我的待办", detail: "项目详情", tasks: "项目任务", chat: "团队聊天", activities: "项目日志", files: "文件列表" };
+const resourceNames: Record<string, string> = { projects: "项目列表", teams: "团队列表", overview: "统计", notifications: "通知", myTasks: "我的待办", detail: "项目详情", tasks: "项目任务", chat: "团队聊天", activities: "项目日志", files: "文件列表", dms: "私信列表" };
 type LoadState = { loading: boolean; loaded: boolean; error: string | null };
 
 export default function WorkspacePage() {
@@ -59,6 +63,9 @@ export default function WorkspacePage() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [dmConversations, setDmConversations] = useState<DmConversation[]>([]);
+  const [dmUnreadTotal, setDmUnreadTotal] = useState(0);
+  const [dmTargetId, setDmTargetId] = useState<number | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [taskSearch, setTaskSearch] = useState("");
   const [modal, setModal] = useState<ModalState>(null);
@@ -134,20 +141,27 @@ export default function WorkspacePage() {
     const id = selectedIdRef.current;
     if (id !== null) await loadResource<{ files: FileItem[] }>("files", `/api/projects/${id}/files`, (d) => setFiles(d.files));
   }, [loadResource]);
+  const refreshDms = useCallback(async () => {
+    await loadResource<{ conversations: DmConversation[]; unreadTotal: number }>("dms", "/api/dm", (d) => {
+      setDmConversations(d.conversations);
+      setDmUnreadTotal(d.unreadTotal);
+    });
+  }, [loadResource]);
 
   const refreshProjectData = useCallback(async () => {
     await Promise.all([refreshDetail(), refreshTasks(), refreshChat(), refreshActivities(), refreshFiles()]);
   }, [refreshDetail, refreshTasks, refreshChat, refreshActivities, refreshFiles]);
 
-  // 初始加载 + 轻量轮询（通知/统计/我的任务）
+  // 初始加载 + 轻量轮询（通知/统计/我的任务/私信列表）
   useEffect(() => {
     if (!me) return;
-    Promise.all([refreshTeams(), refreshProjects(), refreshOverview(), refreshNotifications(), refreshMyTasks()]).catch(() => {});
+    Promise.all([refreshTeams(), refreshProjects(), refreshOverview(), refreshNotifications(), refreshMyTasks(), refreshDms()]).catch(() => {});
     const stop = [
       ["notifications", refreshNotifications], ["overview", refreshOverview], ["myTasks", refreshMyTasks],
+      ["dms", refreshDms],
     ].map(([key, refresh]) => startPolling(() => gate.isPending(key as string) ? Promise.resolve() : (refresh as () => Promise<void>)(), 20000));
     return () => stop.forEach((cancel) => cancel());
-  }, [me, gate, refreshTeams, refreshProjects, refreshOverview, refreshNotifications, refreshMyTasks]);
+  }, [me, gate, refreshTeams, refreshProjects, refreshOverview, refreshNotifications, refreshMyTasks, refreshDms]);
 
   // 切换项目时拉取项目数据
   useEffect(() => {
@@ -193,8 +207,28 @@ export default function WorkspacePage() {
     focusSection, setFocusSection: (section) => { gate.cancel(["notificationNavigation"]); setFocusSection(section); },
     teams, projects, selectedId, detail, tasks, myTasks, chat, activities, files,
     notifications, unreadCount, overview,
+    dmConversations, dmUnreadTotal, dmTargetId,
+    refreshDms,
     taskSearch, setTaskSearch,
     selectProject,
+    openDmConversation: (id) => { gate.cancel(["notificationNavigation"]); setDmTargetId(id); setRailView("messages"); },
+    async openDmWithPeer(peerId) {
+      const d = await api<{ conversation: { id: number } }>("/api/dm", { method: "POST", json: { peerId } });
+      await afterSaved([refreshDms()]);
+      gate.cancel(["notificationNavigation"]);
+      setDmTargetId(d.conversation.id);
+      setRailView("messages");
+    },
+    async hideDmConversation(id) {
+      await api(`/api/dm/${id}/hide`, { method: "PUT", json: {} });
+      await afterSaved([refreshDms()]);
+      setDmTargetId((current) => current === id ? null : current);
+    },
+    async deleteDmConversation(id) {
+      await api(`/api/dm/${id}`, { method: "DELETE" });
+      await afterSaved([refreshDms(), refreshNotifications()]);
+      setDmTargetId((current) => current === id ? null : current);
+    },
     modal, openModal: setModal, closeModal: () => setModal(null),
     drawerTaskId,
     openTask: (id) => { gate.cancel(["notificationNavigation"]); setDrawerTaskId(id); },
@@ -305,7 +339,7 @@ export default function WorkspacePage() {
       try {
         const target = await resolveNotificationTarget(notification, request.signal);
         if (!request.current()) return false;
-        if (target && !projects.some((project) => project.id === target.projectId)) {
+        if (target && target.section !== "dm" && !projects.some((project) => project.id === target.projectId)) {
           await loadResource<{ projects: ProjectSummary[] }>("projects", "/api/projects", (data) => setProjects(data.projects));
           if (!request.current()) return false;
         }
@@ -319,9 +353,14 @@ export default function WorkspacePage() {
           void refreshNotifications().catch(() => {});
           throw new Error("这条通知没有可打开的关联内容。");
         }
-        selectProject(target.projectId);
-        setRailView("projects"); setFocusSection(target.section); setTaskSearch("");
-        setDrawerTaskId(target.taskId ?? null);
+        if (target.section === "dm") {
+          setDmTargetId(target.dmConversationId);
+          setRailView("messages");
+        } else {
+          selectProject(target.projectId);
+          setRailView("projects"); setFocusSection(target.section); setTaskSearch("");
+          setDrawerTaskId(target.taskId ?? null);
+        }
         if (readFailed) setNotice("内容已打开，但未能标记已读，请稍后重试。");
         void refreshNotifications().catch(() => {});
         return true;
@@ -332,9 +371,10 @@ export default function WorkspacePage() {
     },
   }), [
     me, railView, focusSection, teams, projects, selectedId, detail, tasks, myTasks, chat,
-    activities, files, notifications, unreadCount, overview, taskSearch, modal, drawerTaskId,
+    activities, files, notifications, unreadCount, overview, dmConversations, dmUnreadTotal, dmTargetId,
+    taskSearch, modal, drawerTaskId,
     selectProject, refreshProjects, refreshProjectData, refreshTasks, refreshChat,
-    refreshActivities, refreshFiles, refreshNotifications, refreshMyTasks, refreshDetail, refreshTeams, refreshOverview,
+    refreshActivities, refreshFiles, refreshNotifications, refreshMyTasks, refreshDetail, refreshTeams, refreshOverview, refreshDms,
     afterProjectMutation, afterTaskMutation, afterSaved,
     gate,
     loadResource,
@@ -344,14 +384,15 @@ export default function WorkspacePage() {
   if (authLoading) return <div className="ws-empty" role="status">正在加载工作空间…</div>;
   if (!me) return <div className="ws-empty" role="alert">{authError || "正在前往登录页面…"}{authError && <button className="ws-btn" onClick={() => void authenticate()}>重试</button>}</div>;
   const retries: Record<string, () => Promise<void>> = { projects: refreshProjects, teams: refreshTeams, overview: refreshOverview, notifications: refreshNotifications, myTasks: refreshMyTasks, detail: refreshDetail, tasks: refreshTasks, chat: refreshChat, activities: refreshActivities, files: refreshFiles };
-  const activeKey = railView === "todos" ? "myTasks" : railView === "notifications" ? "notifications" : railView === "projectManagement" ? "projects" : railView === "teamManagement" ? "teams" : focusSection === "tasks" ? "tasks" : focusSection === "chat" ? "chat" : "files";
+  const activeKey = railView === "todos" ? "myTasks" : railView === "notifications" ? "notifications" : railView === "messages" ? "dms" : railView === "docs" ? "docs" : railView === "projectManagement" ? "projects" : railView === "teamManagement" ? "teams" : focusSection === "tasks" ? "tasks" : focusSection === "chat" ? "chat" : "files";
   const initialPending = loads[activeKey] && !loads[activeKey].loaded && (loads[activeKey].loading || loads[activeKey].error);
 
   const project = projects.find((p) => p.id === selectedId);
 
   return (
     <WorkspaceContext.Provider value={store}>
-      <div className="ws-app">
+      <ScaleFrame>
+        <div className="ws-app">
         <IconRail />
         {railView === "projects" && <ProjectSidebar />}
 
@@ -369,6 +410,8 @@ export default function WorkspacePage() {
               {railView === "teamManagement" && <ManagementPanel key="teams" kind="team" />}
               {railView === "todos" && !initialPending && <TodosView />}
               {railView === "notifications" && !initialPending && <NotificationsView />}
+              {railView === "messages" && <MessagesPanel />}
+              {railView === "docs" && <DocsPanel />}
             </div>
             {railView === "projects" && <ProjectActivitySidebar />}
           </div>
@@ -388,6 +431,7 @@ export default function WorkspacePage() {
       {modal?.type === "newTask" && (selectedId ? <NewTaskModal onClose={() => setModal(null)} /> : null)}
       {modal?.type === "newSprint" && (selectedId ? <NewSprintModal onClose={() => setModal(null)} /> : null)}
       {modal?.type === "invite" && (detail ? <InviteModal onClose={() => setModal(null)} /> : null)}
+      </ScaleFrame>
     </WorkspaceContext.Provider>
   );
 }

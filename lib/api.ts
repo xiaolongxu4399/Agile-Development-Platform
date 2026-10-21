@@ -66,6 +66,11 @@ export const PRIORITY_LABEL: Record<string, string> = { low: "低", medium: "中
 
 const ROLE_RANK: Record<string, number> = { owner: 3, admin: 2, member: 1 };
 
+// 角色门槛比较：role 是否达到 min 及以上（owner > admin > member）
+export function roleAtLeast(role: string, min: "member" | "admin" | "owner") {
+  return ROLE_RANK[role] >= ROLE_RANK[min];
+}
+
 // 团队访问校验：必须是团队成员；minRole 提权到 admin / owner
 // 返回 { team, membership }（membership.role 为我在该团队的角色）
 export async function requireTeamAccess(userId: number, teamId: number, minRole: "member" | "admin" | "owner" = "member", executor: Pick<typeof db, "select"> = db) {

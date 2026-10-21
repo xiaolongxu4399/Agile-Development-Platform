@@ -44,6 +44,27 @@ export function IconRail() {
         <Icon name="check" size={17} />
         {myTodoCount > 0 && <span className="ws-rail-dot blue" />}
       </button>
+      <button
+        className={`ws-rail-btn ${ws.railView === "messages" ? "active" : ""}`}
+        title="私信"
+        aria-label="私信"
+        onClick={() => ws.setRailView("messages")}
+      >
+        <Icon name="message" size={17} />
+        {ws.dmUnreadTotal > 0 && (
+          ws.dmUnreadTotal > 9
+            ? <span className="ws-rail-badge">9+</span>
+            : <span className="ws-rail-badge">{ws.dmUnreadTotal}</span>
+        )}
+      </button>
+      <button
+        className={`ws-rail-btn ${ws.railView === "docs" ? "active" : ""}`}
+        title="云文档"
+        aria-label="云文档"
+        onClick={() => ws.setRailView("docs")}
+      >
+        <Icon name="book" size={17} />
+      </button>
 
       <div className="ws-rail-gap" />
 

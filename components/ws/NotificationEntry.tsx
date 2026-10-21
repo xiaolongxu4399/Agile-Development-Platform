@@ -17,7 +17,7 @@ export function NotificationEntry({ notification: n, onOpened }: { notification:
   }
   return <div className="ws-notification-entry">
     <button className={`ws-notif ${n.read ? "" : "unread"}`} disabled={busy} onClick={() => void open()} aria-label={`查看通知：${n.title}`}>
-      <span className="n-ic"><Icon name={n.type === "deadline" ? "bell" : n.type === "assigned" ? "flag" : n.type === "mention" ? "at" : "message"} size={15} /></span>
+      <span className="n-ic"><Icon name={n.type === "deadline" ? "bell" : n.type === "assigned" ? "flag" : n.type === "mention" ? "at" : n.type === "dm" ? "send" : "message"} size={15} /></span>
       <span className="ws-notification-content">{n.title}<span className="n-time">{fmtDateShort(n.createdAt)} {fmtTime(n.createdAt)}{busy ? " · 正在打开…" : ""}</span></span>
     </button>
     {error && <div className="ws-error ws-notification-error" role="alert">{error}</div>}

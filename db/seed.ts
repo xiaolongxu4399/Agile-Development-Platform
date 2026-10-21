@@ -10,6 +10,7 @@ async function main() {
   const {
     users, teams, teamMembers, projects, projectMembers, sprints, tasks,
     labels, taskLabels, comments, chatMessages, activities, notifications,
+    docs, dmConversations, dmMessages,
   } = await import("./schema");
   const { eq, inArray } = await import("drizzle-orm");
 
@@ -203,11 +204,70 @@ async function main() {
     { userId: xu.id, type: "comment", title: `${name(chen)} 评论了任务 AGI-005`, entityType: "task", entityId: agiTask(5).id, read: true },
   ]);
 
+  // ---------- 云文档（演示）----------
+  await db.insert(docs).values([
+    {
+      projectId: agi.id, title: "协作约定与文档写法",
+      content: [
+        "# 协作约定与文档写法",
+        "",
+        "本页说明团队文档的推荐写法，**所有成员都可编辑**，改动会自动保存历史版本。",
+        "",
+        "## 常用语法",
+        "",
+        "- `# 标题` 分级标题，最多六级",
+        "- **粗体**、*斜体*、`行内代码`",
+        "- `- 列表项` 无序列表；`1. 列表项` 有序列表",
+        "- `> 引用` 强调摘录",
+        "",
+        "## 约定",
+        "",
+        "1. 会议纪要按日期倒序放在前文",
+        "2. 接口变更同步更新 [接口文档](https://example.com/api-docs)",
+        "3. 每篇文档保持单一主题，避免大杂烩",
+        "",
+        "> 文档即沟通：写清楚背景与结论，比堆砌过程更重要。",
+      ].join("\n"),
+      createdById: xu.id, updatedById: chen.id,
+    },
+    {
+      projectId: web.id, title: "首页视觉稿评审纪要",
+      content: [
+        "# 首页视觉稿评审纪要",
+        "",
+        "**结论**：视觉稿定稿，进入切图与前端实现。",
+        "",
+        "## 遗留问题",
+        "",
+        "- [ ] 移动端栅格断点待补",
+        "- [ ] 课程资料卡片的信息层级再压一档",
+      ].join("\n"),
+      createdById: zhao.id, updatedById: zhao.id,
+    },
+  ]);
+
+  // ---------- 私聊（演示）----------
+  const [dm] = await db
+    .insert(dmConversations)
+    .values({ userAId: Math.min(xu.id, chen.id), userBId: Math.max(xu.id, chen.id) })
+    .returning();
+  const dmRows = await db
+    .insert(dmMessages)
+    .values([
+      { conversationId: dm.id, senderId: chen.id, content: "看板联调的筛选参数我确认完了，结构没变", createdAt: hoursAgo(4) },
+      { conversationId: dm.id, senderId: xu.id, content: "辛苦！我今晚把三列布局对齐，明天上午给你看效果", createdAt: hoursAgo(3) },
+      { conversationId: dm.id, senderId: chen.id, content: "好，演示前我们再过一遍验收清单", createdAt: hoursAgo(1) },
+    ])
+    .returning();
+  await db.update(dmConversations).set({ lastMessageAt: dmRows.at(-1)!.createdAt }).where(eq(dmConversations.id, dm.id));
+  await db.update(dmMessages).set({ readAt: hoursAgo(0.5) }).where(eq(dmMessages.id, dmRows[0].id));
+
   console.log("✅ 演示数据已写入：");
   console.log(`   团队：敏捷校园研发组（4 名成员）`);
   console.log(`   项目：AgileCampus 平台 AGI（10 任务）/ 交互设计课程网站 WEB（3 任务）`);
   console.log(`   Sprint：AGI SPRINT 01（进行中）+ SPRINT 02（计划）/ WEB SPRINT 01（进行中）`);
   console.log(`   聊天 6 条（含 1 条置顶公告）、评论 3 条、标签 5 个、通知 3 条`);
+  console.log(`   云文档 2 篇、私信会话 1 条（3 条消息）`);
   process.exit(0);
 }
 

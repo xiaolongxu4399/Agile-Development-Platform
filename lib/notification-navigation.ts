@@ -1,6 +1,8 @@
 import { api, ApiError, type NotificationItem } from "./api-client";
 
-type Target = { projectId: number; section: "tasks" | "chat"; taskId?: number };
+type Target =
+  | { projectId: number; section: "tasks" | "chat"; taskId?: number }
+  | { section: "dm"; dmConversationId: number };
 type FetchTarget = <T>(path: string, options?: { signal?: AbortSignal }) => Promise<T>;
 
 export async function resolveNotificationTarget(notification: NotificationItem, signal?: AbortSignal,
@@ -8,6 +10,10 @@ export async function resolveNotificationTarget(notification: NotificationItem, 
   const id = notification.entityId;
   if (!id || !Number.isSafeInteger(id) || id <= 0) return null;
   try {
+    // 私信通知：entityId 即会话 id，仅会话双方会收到，无需再请求校验
+    if (notification.entityType === "dm") {
+      return { section: "dm", dmConversationId: id };
+    }
     if (notification.entityType === "task") {
       const { task } = await fetchTarget<{ task: { id: number; projectId: number } }>(`/api/tasks/${id}`, { signal });
       return { projectId: task.projectId, section: "tasks", taskId: task.id };

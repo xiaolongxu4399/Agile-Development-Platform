@@ -26,6 +26,15 @@ test("project mentions enter chat, while legacy or invalid targets never make a 
   }
 });
 
+test("direct-message notifications open the conversation without any request", async () => {
+  assert.deepEqual(
+    await resolveNotificationTarget({ ...base, type: "dm", entityType: "dm", entityId: 21 }, undefined, async () => {
+      throw new Error("must not fetch");
+    }),
+    { section: "dm", dmConversationId: 21 },
+  );
+});
+
 test("deleted and inaccessible targets have a useful message; connection and cancellation errors remain distinguishable", async () => {
   for (const status of [403, 404]) await assert.rejects(
     resolveNotificationTarget(base, undefined, async () => { throw new ApiError(status, "not accessible"); }),

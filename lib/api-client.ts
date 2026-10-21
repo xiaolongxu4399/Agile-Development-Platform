@@ -194,11 +194,64 @@ export type FileItem = {
 
 export type NotificationItem = {
   id: number;
-  type: "assigned" | "mention" | "comment" | "deadline";
+  type: "assigned" | "mention" | "comment" | "deadline" | "dm";
   title: string;
   entityType: string | null;
   entityId: number | null;
   read: boolean;
+  createdAt: string;
+};
+
+export type DmMessage = {
+  id: number;
+  conversationId: number;
+  senderId: number;
+  senderName: string;
+  mine: boolean;
+  content: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export type DmConversation = {
+  id: number;
+  partner: { userId: number; displayName: string; online: boolean };
+  lastMessage: { content: string; senderId: number; createdAt: string } | null;
+  unreadCount: number;
+};
+
+export type DmContact = {
+  userId: number;
+  displayName: string;
+  teamName: string | null;
+  teamCount: number;
+  online: boolean;
+};
+
+export type DocSummary = {
+  id: number;
+  projectId: number;
+  projectName: string;
+  title: string;
+  excerpt: string;
+  updatedByName: string | null;
+  updatedAt: string;
+  canDelete: boolean;
+};
+
+export type DocDetail = DocSummary & {
+  content: string;
+  createdByName: string | null;
+  createdAt: string;
+  canEdit: boolean;
+};
+
+export type DocVersion = {
+  id: number;
+  title: string;
+  excerpt: string;
+  content: string;
+  editorName: string | null;
   createdAt: string;
 };
 

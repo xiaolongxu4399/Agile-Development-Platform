@@ -266,6 +266,55 @@ export const attachments = pgTable("attachments", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+/* ============ 私聊 ============ */
+
+// 私聊会话：两个用户一对一；userAId 恒存较小 id（CHECK 约束），保证同一对用户只有一条会话
+// hiddenForA/B：某方隐藏会话后从其列表移除；对方发来新消息或重新发起时自动恢复
+export const dmConversations = pgTable("dm_conversations", {
+  id: serial("id").primaryKey(),
+  userAId: integer("user_a_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userBId: integer("user_b_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  hiddenForA: boolean("hidden_for_a").notNull().default(false),
+  hiddenForB: boolean("hidden_for_b").notNull().default(false),
+  lastMessageAt: timestamp("last_message_at", { withTimezone: true }),  // 冗余排序字段，发消息时更新
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [unique("dm_conversations_pair_uq").on(t.userAId, t.userBId),
+  check("dm_conversations_pair_check", sql`${t.userAId} < ${t.userBId}`)]);
+
+// 私聊消息：readAt 为接收方阅读时间（null 即对方未读），发送方可据此展示「已读」
+export const dmMessages = pgTable("dm_messages", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").notNull().references(() => dmConversations.id, { onDelete: "cascade" }),
+  senderId: integer("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [index("dm_messages_conversation_idx").on(t.conversationId)]);
+
+/* ============ 云文档 ============ */
+
+// 项目文档：飞书式协作文档，正文本为 Markdown，项目成员均可读可写
+export const docs = pgTable("docs", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),                          // 标题（80 字以内）
+  content: text("content").notNull().default(""),          // Markdown 正文
+  createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  updatedById: integer("updated_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => [index("docs_project_idx").on(t.projectId)]);
+
+// 文档历史版本：每次保存前快照旧内容；每篇文档只保留最近 MAX_DOC_VERSIONS 版
+export const docVersions = pgTable("doc_versions", {
+  id: serial("id").primaryKey(),
+  docId: integer("doc_id").notNull().references(() => docs.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),                          // 快照时的标题
+  content: text("content").notNull(),                      // 快照时的正文
+  editorId: integer("editor_id").references(() => users.id, { onDelete: "set null" }), // 触发本次保存的人
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [index("doc_versions_doc_idx").on(t.docId)]);
+
 export const milestoneResources = pgTable("milestone_resources", {
   id: serial("id").primaryKey(),
   milestoneId: integer("milestone_id").notNull().references(() => milestones.id, { onDelete: "cascade" }),

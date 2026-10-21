@@ -61,6 +61,12 @@ export function TeamPanel({ teamId }: { teamId: number }) {
               {canAssign && m.role === "owner" && <small className="ws-team-note">创建者默认担任负责人</small>}
             </div>
             <span className={`ws-online-text ${m.online ? "on" : ""}`}>{m.online ? "在线" : "离线"}</span>
+            {m.userId !== ws.me.id && (
+              <button className="ws-btn" style={{ padding: "6px 12px", fontSize: 12, flexShrink: 0 }}
+                title={`私信 ${m.displayName}`} onClick={() => { void ws.openDmWithPeer(m.userId).catch((e: Error) => setError(e.message)); }}>
+                <Icon name="message" size={13} /> 私信
+              </button>
+            )}
             <span className="ws-role-tag">{ROLE_TEXT[m.role] ?? m.role}</span>
           </article>
         ))}
