@@ -3,10 +3,12 @@
 // 私信面板：飞书式双栏——左侧会话列表（未读角标、最后消息预览），右侧一对一消息流
 // 联系人限于同团队成员；消息 8 秒轮询，会话列表随工作台全局轮询刷新
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, fmtDateShort, fmtTime, dayKey, type DmConversation, type DmContact, type DmMessage } from "@/lib/api-client";
+import { api, uploadFile, fmtDateShort, fmtTime, fmtSize, dayKey, type DmConversation, type DmContact, type DmMessage } from "@/lib/api-client";
 import { useWorkspace, Icon, Avatar, Modal } from "./shared";
 import { ConversationSkeleton } from "./LoadingSkeleton";
 import { toast } from "@/lib/toast";
+
+const EMOJIS = ["👍", "🎉", "😂", "🙏", "💪", "👀", "❤️", "🔥"];
 
 export function MessagesPanel() {
   const ws = useWorkspace();
@@ -179,9 +181,12 @@ function DmThread({ conversationId }: { conversationId: number }) {
   const [text, setText] = useState("");
   const [hint, setHint] = useState("");
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [showEmoji, setShowEmoji] = useState(false);
   const [failed, setFailed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const stickToBottom = useRef(true);
   const markingRead = useRef(false);
 
@@ -244,6 +249,24 @@ function DmThread({ conversationId }: { conversationId: number }) {
     }
   }
 
+  // 发送文件：与团队聊天同一套限额（≤100MB）与错误提示，成功后本地追加消息卡片
+  async function sendFile(file: File) {
+    if (uploading) return;
+    setUploading(true);
+    setHint("");
+    try {
+      const d = await uploadFile<{ message: DmMessage }>(`/api/dm/${conversationId}/files`, file);
+      stickToBottom.current = true;
+      setMessages((items) => [...items, d.message]);
+      void ws.refreshDms().catch(() => {});
+      toast(`已发送「${file.name}」`);
+    } catch (e) {
+      toast(`文件发送失败：${(e as Error).message}`, "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   // 我发出的最后一条消息：展示已读回执（日期分隔用相邻比较，不在渲染中改写变量）
   const lastMineId = [...messages].reverse().find((m) => m.mine)?.id ?? null;
 
@@ -281,7 +304,18 @@ function DmThread({ conversationId }: { conversationId: number }) {
             <div key={m.id}>
               {showSep && <div className="ws-date-sep"><span>{fmtDateShort(m.createdAt)}</span></div>}
               <div className={`ws-dm-msg ${m.mine ? "mine" : ""}`}>
-                <div className="ws-dm-bubble">{m.content}</div>
+                {m.attachment ? (
+                  <a className="ws-dm-file" href={`/api/dm/files/${m.attachment.id}`} title="点击下载">
+                    <span className="ws-dm-file-ic"><Icon name="file" size={16} /></span>
+                    <span className="ws-dm-file-main">
+                      <b>{m.attachment.name}</b>
+                      <small>{fmtSize(m.attachment.size)} · 点击下载</small>
+                    </span>
+                    <Icon name="download" size={14} />
+                  </a>
+                ) : (
+                  <div className="ws-dm-bubble">{m.content}</div>
+                )}
               </div>
               {m.id === lastMineId && (
                 <div className={`ws-dm-receipt ${m.mine ? "mine" : ""}`}>{m.readAt ? "已读" : "未读"}</div>
@@ -293,7 +327,24 @@ function DmThread({ conversationId }: { conversationId: number }) {
 
       <div className="ws-dm-input">
         {hint && !failed && <div className="ws-error" style={{ marginTop: 0, marginBottom: 6 }}>{hint}</div>}
+        {showEmoji && (
+          <div className="ws-member-pick" style={{ width: "auto", display: "flex", gap: 2, left: 34 }}>
+            {EMOJIS.map((e) => (
+              <button key={e} style={{ width: 34, fontSize: 15 }} onClick={() => { setText((t) => t + e); setShowEmoji(false); inputRef.current?.focus(); }}>
+                {e}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="ws-input-row">
+          <div className="ws-input-tools">
+            <button className="ws-tool-btn" title={uploading ? "正在发送…" : "发送文件（≤100MB）"} disabled={uploading} onClick={() => fileRef.current?.click()}>
+              <Icon name="plus" size={15} />
+            </button>
+            <button className="ws-tool-btn" title="表情" onClick={() => setShowEmoji((v) => !v)}>
+              <Icon name="smile" size={15} />
+            </button>
+          </div>
           <textarea
             ref={inputRef}
             className="ws-chat-textarea"
@@ -312,6 +363,16 @@ function DmThread({ conversationId }: { conversationId: number }) {
             {sending ? "发送中…" : "发送"}
           </button>
         </div>
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void sendFile(file);
+          }}
+        />
       </div>
     </section>
   );

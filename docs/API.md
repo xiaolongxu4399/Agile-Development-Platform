@@ -108,13 +108,15 @@ npm run dev                 # 启动 http://localhost:3000
 | GET | `/api/dm` | 登录 | 我的会话列表（对方资料、最后一条消息摘要、未读数、`unreadTotal`），按最后活跃倒序；我方隐藏的会话不返回 |
 | POST | `/api/dm` | 登录 | `{ peerId }` 与同团队成员打开（或创建）一对一会话；非同团队返回 403；重新发起会自动取消我方的隐藏 |
 | GET | `/api/dm/contacts` | 登录 | 可私聊的联系人 = 我所有团队的其他成员（去重，在线优先排序） |
-| GET | `/api/dm/[id]/messages?afterId=` | 会话双方 | 最新 80 条（时间正序）；`afterId` 增量拉取 |
+| GET | `/api/dm/[id]/messages?afterId=` | 会话双方 | 最新 80 条（时间正序）；`afterId` 增量拉取；文件消息含 `attachment` 字段 |
 | POST | `/api/dm/[id]/messages` | 会话双方 | `{ content }`（≤2000 字）；发送后通知对方（点击通知直达会话）；若对方隐藏过会话则自动恢复显示 |
+| POST | `/api/dm/[id]/files` | 会话双方 | `multipart/form-data`：`file`（≤100MB）发送文件消息，存 `uploads/`；通知文案为「给你发来文件《文件名》」 |
+| GET | `/api/dm/files/[id]` | 会话双方 | 下载私聊文件（校验会话双方身份，中文文件名 RFC 5987 编码） |
 | PUT | `/api/dm/[id]/read` | 会话双方 | 标记对方发来的未读消息为已读（幂等），返回 `{ updated }` |
 | PUT | `/api/dm/[id]/hide` | 会话双方 | 隐藏会话（仅从我的列表移除，消息保留）；对方来新消息或我重新发起时自动恢复 |
-| DELETE | `/api/dm/[id]` | 会话双方 | 删除会话：清空双方全部消息（级联），并清理关联私信通知，双方列表同时消失 |
+| DELETE | `/api/dm/[id]` | 会话双方 | 删除会话：清空双方全部消息与附件（级联），清理关联私信通知并尽力删除物理文件 |
 
-消息对象含 `mine`（是否我发的）与 `readAt`（对方阅读时间，null 即未读，用于已读回执）。同一对用户只存一条会话（`user_a_id < user_b_id` 唯一约束）。
+消息对象含 `mine`（是否我发的）与 `readAt`（对方阅读时间，null 即未读，用于已读回执）。文件消息的 `attachment` 含 `{ id, name, size, mimeType }`，下载走 `GET /api/dm/files/{id}`。同一对用户只存一条会话（`user_a_id < user_b_id` 唯一约束）。
 
 ### 云文档（v5 新增）
 

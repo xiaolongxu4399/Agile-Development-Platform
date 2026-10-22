@@ -282,14 +282,28 @@ export const dmConversations = pgTable("dm_conversations", {
   check("dm_conversations_pair_check", sql`${t.userAId} < ${t.userBId}`)]);
 
 // 私聊消息：readAt 为接收方阅读时间（null 即对方未读），发送方可据此展示「已读」
+// attachmentId 非空即文件消息（正文存原始文件名，界面渲染为文件卡片）
 export const dmMessages = pgTable("dm_messages", {
   id: serial("id").primaryKey(),
   conversationId: integer("conversation_id").notNull().references(() => dmConversations.id, { onDelete: "cascade" }),
   senderId: integer("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
+  attachmentId: integer("attachment_id").references((): AnyPgColumn => dmAttachments.id, { onDelete: "set null" }),
   readAt: timestamp("read_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (t) => [index("dm_messages_conversation_idx").on(t.conversationId)]);
+
+// 私聊附件：文件本体与项目文件一样存项目根 uploads/ 目录（随机存储名，不入库、不进 Git）
+export const dmAttachments = pgTable("dm_attachments", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").notNull().references(() => dmConversations.id, { onDelete: "cascade" }),
+  uploaderId: integer("uploader_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  originalName: text("original_name").notNull(),          // 原始文件名（下载时展示）
+  storedName: text("stored_name").notNull(),              // 存储文件名（随机 UUID，防冲突与路径穿越）
+  mimeType: text("mime_type"),
+  size: integer("size").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [index("dm_attachments_conversation_idx").on(t.conversationId)]);
 
 /* ============ 云文档 ============ */
 

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { and, asc, desc, eq, gt } from "drizzle-orm";
 import { db } from "@/db";
-import { dmConversations, dmMessages, users } from "@/db/schema";
+import { dmAttachments, dmConversations, dmMessages, users } from "@/db/schema";
 import { requireUser, parseBody, parseId, ApiError, handleApiError, displayName } from "@/lib/api";
 import { notify } from "@/lib/notify";
 
@@ -41,13 +41,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         conversationId: dmMessages.conversationId,
         senderId: dmMessages.senderId,
         content: dmMessages.content,
+        attachmentId: dmMessages.attachmentId,
         readAt: dmMessages.readAt,
         createdAt: dmMessages.createdAt,
         senderName: users.name,
         senderStudentId: users.studentId,
+        attName: dmAttachments.originalName,
+        attSize: dmAttachments.size,
+        attMime: dmAttachments.mimeType,
       })
       .from(dmMessages)
-      .innerJoin(users, eq(users.id, dmMessages.senderId));
+      .innerJoin(users, eq(users.id, dmMessages.senderId))
+      .leftJoin(dmAttachments, eq(dmAttachments.id, dmMessages.attachmentId));
 
     const rows = Number.isInteger(afterId) && afterId! > 0
       ? await baseQuery
@@ -69,6 +74,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         senderName: displayName({ name: m.senderName, studentId: m.senderStudentId }),
         mine: m.senderId === user.id,
         content: m.content,
+        attachment: m.attachmentId ? { id: m.attachmentId, name: m.attName ?? m.content, size: m.attSize ?? 0, mimeType: m.attMime } : null,
         readAt: m.readAt,
         createdAt: m.createdAt,
       })),

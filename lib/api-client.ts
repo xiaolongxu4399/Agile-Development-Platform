@@ -209,6 +209,7 @@ export type DmMessage = {
   senderName: string;
   mine: boolean;
   content: string;
+  attachment: { id: number; name: string; size: number; mimeType: string | null } | null;
   readAt: string | null;
   createdAt: string;
 };
