@@ -20,6 +20,10 @@ import { ChatPanel } from "@/components/ws/ChatPanel";
 import { MessagesPanel } from "@/components/ws/MessagesPanel";
 import { DocsPanel } from "@/components/ws/DocsPanel";
 import { ScaleFrame } from "@/components/ws/ScaleFrame";
+import { ToastHost } from "@/components/ws/ToastHost";
+import { CommandPalette } from "@/components/ws/CommandPalette";
+import { TaskListSkeleton, ConversationSkeleton } from "@/components/ws/LoadingSkeleton";
+import { toast } from "@/lib/toast";
 import { ManagementPanel } from "@/components/ws/ManagementPanel";
 import { ProjectActivitySidebar } from "@/components/ws/ProjectActivitySidebar";
 import { SpacePanel, NewSprintModal, InviteModal } from "@/components/ws/SpacePanel";
@@ -66,6 +70,8 @@ export default function WorkspacePage() {
   const [dmConversations, setDmConversations] = useState<DmConversation[]>([]);
   const [dmUnreadTotal, setDmUnreadTotal] = useState(0);
   const [dmTargetId, setDmTargetId] = useState<number | null>(null);
+  const [dmsLoaded, setDmsLoaded] = useState(false);
+  const [docTargetId, setDocTargetId] = useState<number | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [taskSearch, setTaskSearch] = useState("");
   const [modal, setModal] = useState<ModalState>(null);
@@ -145,6 +151,7 @@ export default function WorkspacePage() {
     await loadResource<{ conversations: DmConversation[]; unreadTotal: number }>("dms", "/api/dm", (d) => {
       setDmConversations(d.conversations);
       setDmUnreadTotal(d.unreadTotal);
+      setDmsLoaded(true);
     });
   }, [loadResource]);
 
@@ -207,8 +214,9 @@ export default function WorkspacePage() {
     focusSection, setFocusSection: (section) => { gate.cancel(["notificationNavigation"]); setFocusSection(section); },
     teams, projects, selectedId, detail, tasks, myTasks, chat, activities, files,
     notifications, unreadCount, overview,
-    dmConversations, dmUnreadTotal, dmTargetId,
-    refreshDms,
+    dmConversations, dmUnreadTotal, dmTargetId, dmsLoaded,
+    refreshDms, docTargetId,
+    openDoc: (id) => { gate.cancel(["notificationNavigation"]); setDocTargetId(id); setRailView("docs"); },
     taskSearch, setTaskSearch,
     selectProject,
     openDmConversation: (id) => { gate.cancel(["notificationNavigation"]); setDmTargetId(id); setRailView("messages"); },
@@ -241,6 +249,7 @@ export default function WorkspacePage() {
     },
     async deleteWorkspaceItem(kind, id) {
       await api(`/api/${kind === "project" ? "projects" : "teams"}/${id}`, { method: "DELETE" });
+      toast(`已删除${kind === "project" ? "项目" : "团队"}`);
       const removesSelection = kind === "project"
         ? selectedIdRef.current === id
         : projects.some((p) => p.id === selectedIdRef.current && p.teamId === id);
@@ -289,10 +298,13 @@ export default function WorkspacePage() {
       const d = detail;
       if (!d) return;
       await api(`/api/teams/${d.team.id}/members`, { method: "POST", json: { email } });
+      toast("成员已加入团队");
       await afterSaved([refreshDetail(), refreshProjects()]);
     },
     async toggleStar(projectId) {
+      const wasStarred = projects.some((p) => p.id === projectId && p.starred);
       await api(`/api/projects/${projectId}/star`, { method: "POST", json: {} });
+      toast(wasStarred ? "已取消收藏" : "已收藏项目");
       await afterSaved([refreshProjects(), refreshDetail()]);
     },
     async sendChat(content, opts) {
@@ -371,7 +383,7 @@ export default function WorkspacePage() {
     },
   }), [
     me, railView, focusSection, teams, projects, selectedId, detail, tasks, myTasks, chat,
-    activities, files, notifications, unreadCount, overview, dmConversations, dmUnreadTotal, dmTargetId,
+    activities, files, notifications, unreadCount, overview, dmConversations, dmUnreadTotal, dmTargetId, dmsLoaded, docTargetId,
     taskSearch, modal, drawerTaskId,
     selectProject, refreshProjects, refreshProjectData, refreshTasks, refreshChat,
     refreshActivities, refreshFiles, refreshNotifications, refreshMyTasks, refreshDetail, refreshTeams, refreshOverview, refreshDms,
@@ -402,7 +414,11 @@ export default function WorkspacePage() {
           {Object.entries(loads).filter(([, state]) => state.error).map(([key, state]) => <div className="ws-error" role="alert" key={key}>{resourceNames[key]}加载失败：{state.error} <button className="ws-btn" disabled={state.loading} onClick={() => void retries[key]().catch(() => {})}>{state.loading ? "重试中…" : "重试"}</button></div>)}
           <div className="ws-body">
             <div className="ws-center" id="ws-center">
-              {initialPending && <div className="ws-empty" role="status">{loads[activeKey].loading ? `正在加载${resourceNames[activeKey]}…` : "加载失败，请点击上方重试"}</div>}
+              {initialPending && railView !== "messages" && railView !== "docs" && (loads[activeKey].error
+                ? <div className="ws-empty" role="alert">加载失败，请点击上方重试</div>
+                : activeKey === "tasks" ? <TaskListSkeleton />
+                : activeKey === "chat" ? <ConversationSkeleton rows={5} />
+                : <div className="ws-empty" role="status">正在加载{resourceNames[activeKey]}…</div>)}
               {!initialPending && railView === "projects" && focusSection === "tasks" && <TaskPanel key={selectedId} />}
               {railView === "projects" && focusSection === "chat" && !initialPending && <ChatPanel key={selectedId} />}
               {railView === "projects" && focusSection === "space" && !initialPending && <SpacePanel key={selectedId} />}
@@ -432,6 +448,9 @@ export default function WorkspacePage() {
       {modal?.type === "newSprint" && (selectedId ? <NewSprintModal onClose={() => setModal(null)} /> : null)}
       {modal?.type === "invite" && (detail ? <InviteModal onClose={() => setModal(null)} /> : null)}
       </ScaleFrame>
+
+      <ToastHost />
+      <CommandPalette />
     </WorkspaceContext.Provider>
   );
 }

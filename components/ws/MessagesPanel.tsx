@@ -5,6 +5,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, fmtDateShort, fmtTime, dayKey, type DmConversation, type DmContact, type DmMessage } from "@/lib/api-client";
 import { useWorkspace, Icon, Avatar, Modal } from "./shared";
+import { ConversationSkeleton } from "./LoadingSkeleton";
+import { toast } from "@/lib/toast";
 
 export function MessagesPanel() {
   const ws = useWorkspace();
@@ -33,9 +35,9 @@ export function MessagesPanel() {
     try {
       await ws.hideDmConversation(id);
       if (activeId === id) setActiveId(null);
+      toast("会话已隐藏，对方来新消息会自动恢复");
     } catch (e) {
-      setMenu(null);
-      window.alert((e as Error).message);
+      toast((e as Error).message, "error");
     }
     setMenu(null);
   }
@@ -44,8 +46,9 @@ export function MessagesPanel() {
     try {
       await ws.deleteDmConversation(id);
       if (activeId === id) setActiveId(null);
+      toast("会话已删除");
     } catch (e) {
-      window.alert((e as Error).message);
+      toast((e as Error).message, "error");
     }
     setMenu(null);
   }
@@ -75,7 +78,8 @@ export function MessagesPanel() {
           </button>
         </div>
         <div className="ws-dm-scroll">
-          {ws.dmConversations.length === 0 && (
+          {!ws.dmsLoaded && <ConversationSkeleton rows={4} />}
+          {ws.dmsLoaded && ws.dmConversations.length === 0 && (
             <div className="ws-empty" style={{ margin: 12 }}>还没有私信，点击「添加」找同团队的成员聊聊</div>
           )}
           {ws.dmConversations.map((c) => (
@@ -234,6 +238,7 @@ function DmThread({ conversationId }: { conversationId: number }) {
       void ws.refreshDms().catch(() => {});
     } catch (e) {
       setHint((e as Error).message);
+      toast(`发送失败：${(e as Error).message}`, "error");
     } finally {
       setSending(false);
     }

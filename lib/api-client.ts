@@ -269,9 +269,14 @@ export type Overview = {
 export const STATUS_TEXT: Record<string, string> = { todo: "待开始", doing: "进行中", done: "已完成" };
 export const PRIORITY_TEXT: Record<string, string> = { high: "高", medium: "中", low: "低" };
 
-// 头像底色：全员统一品牌蓝，同一深浅（用户要求每个人的头像底色一致，靠首字母区分人）
-export function avatarColor(_key?: number | string): string {
-  return "#3b6ef5";
+// 头像底色（方案 A）：全员统一蓝色系，按用户 id 从 5 个品牌蓝邻近色阶稳定取色——
+// 整体仍是"一个团队一个色系"，但在列表/会话流里可以按深浅快速认人
+const AVATAR_BLUES = ["#3b6ef5", "#2f5cd8", "#5b8cff", "#6f9bff", "#24407a"];
+export function avatarColor(key?: number | string): string {
+  if (typeof key === "number" && Number.isInteger(key) && key > 0) {
+    return AVATAR_BLUES[(key - 1) % AVATAR_BLUES.length];
+  }
+  return AVATAR_BLUES[0];
 }
 
 export function initials(name: string): string {

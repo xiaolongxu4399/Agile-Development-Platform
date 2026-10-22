@@ -1,7 +1,8 @@
 "use client";
 
-// 顶栏：品牌、分区菜单、Ctrl+K 搜索、通知铃铛浮层、头像下拉（设置/退出）
-import { useEffect, useRef, useState } from "react";
+// 顶栏：品牌、项目视图分区菜单（仅项目视图显示）、任务过滤搜索、通知铃铛浮层、头像下拉
+// Ctrl+K 已改为打开全局命令面板（CommandPalette）
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
 import { useWorkspace, Icon, Avatar } from "./shared";
@@ -14,19 +15,6 @@ export function TopBar() {
   const router = useRouter();
   const [showNotif, setShowNotif] = useState(false);
   const [showUser, setShowUser] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  // Ctrl/Cmd + K 聚焦搜索
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   const project = ws.projects.find((p) => p.id === ws.selectedId);
 
@@ -40,17 +28,19 @@ export function TopBar() {
     <header className="ws-topbar">
       <div className="ws-brand"><i>◇</i>AgileCampus</div>
 
-      <nav className="ws-top-menu">
-        <button className={ws.railView === "projects" && ws.focusSection === "tasks" ? "active" : ""} onClick={() => { ws.setRailView("projects"); ws.setFocusSection("tasks"); }}>项目任务</button>
-        <button className={ws.railView === "projects" && ws.focusSection === "chat" ? "active" : ""} onClick={() => { ws.setRailView("projects"); ws.setFocusSection("chat"); }}>团队聊天</button>
-        <button className={ws.railView === "projects" && ws.focusSection === "space" ? "active" : ""} onClick={() => { ws.setRailView("projects"); ws.setFocusSection("space"); }}>项目概览</button>
-      </nav>
+      {/* 分区菜单降级为「项目视图」内的上下文标签：其他视图不显示，导航层级唯一化 */}
+      {ws.railView === "projects" && (
+        <nav className="ws-top-menu" aria-label="项目分区">
+          <button className={ws.focusSection === "tasks" ? "active" : ""} onClick={() => ws.setFocusSection("tasks")}>项目任务</button>
+          <button className={ws.focusSection === "chat" ? "active" : ""} onClick={() => ws.setFocusSection("chat")}>团队聊天</button>
+          <button className={ws.focusSection === "space" ? "active" : ""} onClick={() => ws.setFocusSection("space")}>项目概览</button>
+        </nav>
+      )}
 
       <div className="ws-top-right">
-        <div className="ws-searchbox">
+        <div className="ws-searchbox" title="过滤当前任务列表；Ctrl K 打开全局搜索">
           <Icon name="search" size={13} />
           <input
-            ref={searchRef}
             placeholder={ws.railView === "todos" ? "搜索我的待办…" : project ? `搜索 ${project.name} 的任务…` : "搜索任务…"}
             value={ws.taskSearch}
             onChange={(e) => ws.setTaskSearch(e.target.value)}

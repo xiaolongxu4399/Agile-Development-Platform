@@ -9,6 +9,8 @@ import {
 } from "@/lib/api-client";
 import { renderMarkdown } from "@/lib/markdown";
 import { useWorkspace, Icon, Modal } from "./shared";
+import { DocListSkeleton } from "./LoadingSkeleton";
+import { toast } from "@/lib/toast";
 
 export function DocsPanel() {
   const ws = useWorkspace();
@@ -19,6 +21,15 @@ export function DocsPanel() {
   const [openDoc, setOpenDoc] = useState<DocDetail | null>(null);
   const [creating, setCreating] = useState(false);
   const [openingId, setOpeningId] = useState<number | null>(null);
+
+  // 命令面板跳转：docTargetId 变化（含本面板未挂载时设置的值）即拉取详情并打开
+  const docTargetId = ws.docTargetId;
+  useEffect(() => {
+    if (docTargetId === null) return;
+    api<{ doc: DocDetail }>(`/api/docs/${docTargetId}`)
+      .then((d) => { setOpenDoc(d.doc); })
+      .catch((e: Error) => { setError(e.message); });
+  }, [docTargetId]);
 
   const refresh = useCallback(() => {
     api<{ docs: DocSummary[] }>("/api/docs")
@@ -73,7 +84,7 @@ export function DocsPanel() {
       </div>
 
       {error && <div className="ws-error" role="alert">{error} <button className="ws-btn" onClick={refresh}>重试</button></div>}
-      {!docs && !error && <div className="ws-empty">正在加载文档…</div>}
+      {!docs && !error && <DocListSkeleton rows={3} />}
       {docs && filtered.length === 0 && (
         <div className="ws-empty">
           {docs.length === 0 ? "还没有文档。点击「新建文档」，为项目沉淀会议纪要、需求说明和接口约定。" : "没有符合筛选条件的文档"}
@@ -130,6 +141,7 @@ function NewDocModal({ onClose, onCreated }: { onClose(): void; onCreated(doc: D
     setBusy(true);
     try {
       const d = await api<{ doc: DocDetail }>("/api/docs", { method: "POST", json: { projectId, title: title.trim() } });
+      toast("文档已创建");
       onCreated(d.doc);
     } catch (e) {
       setError((e as Error).message);
@@ -199,6 +211,7 @@ function DocEditor({ initial, onExit }: { initial: DocDetail; onExit(): void }) 
     } catch (e) {
       setPhase("error");
       setSaveError((e as Error).message);
+      toast(`文档保存失败：${(e as Error).message}`, "error");
     } finally {
       savingRef.current = false;
     }
@@ -229,6 +242,7 @@ function DocEditor({ initial, onExit }: { initial: DocDetail; onExit(): void }) 
     setDeleting("busy");
     try {
       await api(`/api/docs/${initial.id}`, { method: "DELETE" });
+      toast("文档已删除");
       onExit();
     } catch (e) {
       setPhase("error");
@@ -335,7 +349,7 @@ function VersionsModal({ docId, onClose, onRestored }: { docId: number; onClose(
     if (restoringId !== null) return;
     setRestoringId(versionId);
     api<{ doc: DocDetail }>(`/api/docs/${docId}/versions`, { method: "POST", json: { versionId } })
-      .then((d) => { onRestored(d.doc); reload(); })
+      .then((d) => { onRestored(d.doc); toast("已恢复到所选版本"); reload(); })
       .catch((e: Error) => setError(e.message))
       .finally(() => setRestoringId(null));
   }

@@ -113,11 +113,14 @@ export interface WorkspaceStore {
   dmConversations: DmConversation[];
   dmUnreadTotal: number;
   dmTargetId: number | null;
+  dmsLoaded: boolean;
   refreshDms(): Promise<void>;
   openDmConversation(id: number): void;
   openDmWithPeer(peerId: number): Promise<void>;
   hideDmConversation(id: number): Promise<void>;
   deleteDmConversation(id: number): Promise<void>;
+  docTargetId: number | null;
+  openDoc(id: number): void;
   taskSearch: string;
   setTaskSearch(q: string): void;
   selectProject(id: number | null): void;
