@@ -2,7 +2,7 @@
 
 // 项目列表栏：搜索、我的工作空间/已收藏分组、选中项目子导航、底部 Sprint 卡
 import { useMemo, useState } from "react";
-import { avatarColor, daysUntil } from "@/lib/api-client";
+import { avatarColor, avatarHue, daysUntil } from "@/lib/api-client";
 import { canCreateSprint } from "@/lib/sprint-permissions";
 import { useWorkspace, Icon, type FocusSection } from "./shared";
 
@@ -108,7 +108,8 @@ function ProjectItem({ id, expanded, onToggle }: {
                 <span
                   key={m.userId}
                   className="ws-avatar"
-                  style={{ width: 16, height: 16, fontSize: 8, borderRadius: 5, background: avatarColor(m.name) }}
+                  data-av={avatarHue(m.userId)}
+                  style={{ width: 16, height: 16, fontSize: 8, borderRadius: 5 }}
                   title={m.name}
                 >
                   {m.name.slice(0, 1)}

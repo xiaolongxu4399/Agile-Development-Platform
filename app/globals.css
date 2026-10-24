@@ -511,8 +511,26 @@ html[data-theme="day"] .ws-task-description{background:#fffaf2;border-color:#b6a
 .ws-dm-input .ws-input-tools{padding-bottom:3px}
 .ws-dm-input .ws-tool-btn:disabled{opacity:.5;cursor:wait}
 
-/* ══════════ 图标栏激活指示条（P0） ══════════ */
-.ws-rail-btn.active::before{content:"";position:absolute;left:-9px;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--ws-color-6f9bff)}
+/* ══════════ 图标栏激活块（QQ/微信式，P0-4 修订版） ══════════ */
+/* 夜间：亮蓝底圆角块 + 白图标；日间：深暖底圆角块 + 米白图标（workspace-theme 未映射的
+   旧激活色在日间呈深底深字，改由这里的高优先级规则统一接管） */
+.ws-rail-btn.active{background:var(--ws-color-2a3a5e);color:var(--ws-color-fff);border-radius:12px;box-shadow:inset 0 0 0 1px var(--ws-color-304467)}
+.ws-rail-btn.active:hover{background:var(--ws-color-2a3a5e)}
+html[data-theme="day"] .ws-rail .ws-rail-btn.active{background:#fffdf8;color:#a24f1a;box-shadow:inset 0 0 0 1px #d8bd97,0 2px 6px rgba(80,55,25,.14)}
+html[data-theme="day"] .ws-rail .ws-rail-btn.active:hover{background:#fffdf8}
+
+/* ══════════ 头像底色随昼夜主题（方案 A 主题化）：夜间品牌蓝阶 / 日间暖橙棕阶 ══════════ */
+/* 色档由组件按用户 id 稳定分配（data-av），字母色沿用 .ws-avatar 的白色 */
+.ws-avatar[data-av="0"]{background:#3b6ef5}
+.ws-avatar[data-av="1"]{background:#2f5cd8}
+.ws-avatar[data-av="2"]{background:#5b8cff}
+.ws-avatar[data-av="3"]{background:#6f9bff}
+.ws-avatar[data-av="4"]{background:#24407a}
+html[data-theme="day"] .ws-avatar[data-av="0"]{background:#c96212}
+html[data-theme="day"] .ws-avatar[data-av="1"]{background:#a24f1a}
+html[data-theme="day"] .ws-avatar[data-av="2"]{background:#d96619}
+html[data-theme="day"] .ws-avatar[data-av="3"]{background:#e07b26}
+html[data-theme="day"] .ws-avatar[data-av="4"]{background:#8a4710}
 
 /* ══════════ 骨架屏（P0） ══════════ */
 .ws-skel{background:linear-gradient(90deg,var(--ws-color-191b26) 25%,var(--ws-color-22242f) 37%,var(--ws-color-191b26) 63%);background-size:400% 100%;animation:ws-skel-shine 1.4s ease infinite}

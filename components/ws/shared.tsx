@@ -53,18 +53,15 @@ export function Icon({ name, size = 16 }: { name: keyof typeof ICON_PATHS | stri
 }
 
 /* ---------- 头像 ---------- */
+// 底色按“色档”交给 CSS 渲染（globals.css 中 .ws-avatar[data-av]）：夜间品牌蓝阶、日间暖橙棕阶
 export function Avatar({ name, colorKey, size = "", title }: { name: string; colorKey: number | string; size?: "" | "sm" | "lg"; title?: string }) {
-  const color = avatarColorOf(colorKey);
   const letter = name.trim().slice(0, 1).toUpperCase() || "?";
   return (
-    <span className={`ws-avatar ${size}`} style={{ background: color }} title={title ?? name}>{letter}</span>
+    <span className={`ws-avatar ${size}`} data-av={avatarHue(colorKey)} title={title ?? name}>{letter}</span>
   );
 }
 
-import { avatarColor } from "@/lib/api-client";
-function avatarColorOf(key: number | string) {
-  return avatarColor(key);
-}
+import { avatarHue } from "@/lib/api-client";
 
 /* ---------- 通用弹窗 ---------- */
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {

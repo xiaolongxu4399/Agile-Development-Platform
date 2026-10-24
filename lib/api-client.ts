@@ -270,14 +270,27 @@ export type Overview = {
 export const STATUS_TEXT: Record<string, string> = { todo: "待开始", doing: "进行中", done: "已完成" };
 export const PRIORITY_TEXT: Record<string, string> = { high: "高", medium: "中", low: "低" };
 
-// 头像底色（方案 A）：全员统一蓝色系，按用户 id 从 5 个品牌蓝邻近色阶稳定取色——
-// 整体仍是"一个团队一个色系"，但在列表/会话流里可以按深浅快速认人
+// 头像底色（方案 A）：夜间为品牌蓝阶，日间为暖橙棕阶——实际颜色在 CSS 里按主题渲染
+// （.ws-avatar[data-av]），这里只负责按 id 稳定取“色档”0-4，保证同人永远同档
 const AVATAR_BLUES = ["#3b6ef5", "#2f5cd8", "#5b8cff", "#6f9bff", "#24407a"];
 export function avatarColor(key?: number | string): string {
   if (typeof key === "number" && Number.isInteger(key) && key > 0) {
     return AVATAR_BLUES[(key - 1) % AVATAR_BLUES.length];
   }
   return AVATAR_BLUES[0];
+}
+
+// 色档：数字 id 直接取模；字符串按字符散列（供少数只有名字的场合），未提供回落 0
+export function avatarHue(key?: number | string): number {
+  if (typeof key === "number" && Number.isInteger(key) && key > 0) {
+    return (key - 1) % AVATAR_BLUES.length;
+  }
+  if (typeof key === "string" && key.trim()) {
+    let hash = 0;
+    for (const ch of key) hash = (hash * 31 + (ch.codePointAt(0) ?? 0)) % 9973;
+    return hash % AVATAR_BLUES.length;
+  }
+  return 0;
 }
 
 export function initials(name: string): string {
