@@ -18,11 +18,13 @@ export function IconRail() {
       <button className={`ws-rail-btn ws-rail-management ${ws.railView === "projectManagement" ? "active" : ""}`} title="项目管理" aria-label="项目管理" onClick={() => ws.setRailView("projectManagement")}><Icon name="file" size={17} /><small>项目管理</small></button>
       <button className={`ws-rail-btn ws-rail-management ${ws.railView === "teamManagement" ? "active" : ""}`} title="团队管理" aria-label="团队管理" onClick={() => ws.setRailView("teamManagement")}><Icon name="users" size={17} /><small>团队管理</small></button>
       <button
-        className={`ws-rail-btn ${ws.railView === "projects" ? "active" : ""}`}
-        title="项目"
+        className={`ws-rail-btn ws-rail-management ${ws.railView === "projects" ? "active" : ""}`}
+        title="工作台"
+        aria-label="工作台"
         onClick={() => ws.setRailView("projects")}
       >
         <Icon name="grid" size={17} />
+        <small>工作台</small>
       </button>
       <button
         className={`ws-rail-btn ${ws.railView === "notifications" ? "active" : ""}`}

@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { attachments, tasks, users, projects, teams, fileCleanup, milestones, milestoneResources } from "@/db/schema";
+import { attachments, tasks, users, projects, teams, fileCleanup, milestones, milestoneResources, chatMessages } from "@/db/schema";
 import { uploadPath, tryFileCleanup } from "@/lib/file-cleanup";
 import { requireUser, parseId, requireProjectAccess, ApiError, handleApiError, displayName } from "@/lib/api";
 import { logActivity } from "@/lib/activity";
@@ -92,6 +92,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await mkdir(UPLOAD_DIR, { recursive: true });
     await writeFile(uploadPath(storedName), Buffer.from(await file.arrayBuffer()), { flag: "wx" });
 
+    // 从聊天输入区上传（chatFile=1）：同时发一条文件消息，QQ 式留在聊天记录里可按文件搜索
+    let chatMessageId: number | null = null;
     const record = await db.transaction(async (tx) => {
       await tx.select({ id: teams.id }).from(teams).where(eq(teams.id, project.teamId)).for("share");
       await tx.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).for("share");
@@ -114,6 +116,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         })
         .returning();
 
+      // 从聊天输入区上传（chatFile=1）：同时发一条文件消息，留在聊天记录里可按文件搜索
+      if (form.get("chatFile") === "1") {
+        const [msg] = await tx
+          .insert(chatMessages)
+          .values({ projectId, authorId: user.id, content: created.originalName, attachmentId: created.id })
+          .returning({ id: chatMessages.id });
+        chatMessageId = msg.id;
+      }
+
       if (milestoneId !== null) await tx.insert(milestoneResources).values({
         milestoneId, attachmentId: created.id, title: created.originalName, createdById: user.id,
       });
@@ -129,7 +140,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
     pendingStoredName = null;
 
-    return Response.json({ file: record }, { status: 201 });
+    return Response.json({ file: record, chatMessageId }, { status: 201 });
   } catch (error) {
     if (pendingStoredName) {
       try {

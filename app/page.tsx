@@ -327,7 +327,8 @@ export default function WorkspacePage() {
     async uploadProjectFile(file) {
       const id = selectedIdRef.current;
       if (!id) throw new Error("请先选择项目");
-      const d = await apiUpload<{ file: { originalName: string } }>(`/api/projects/${id}/files`, file);
+      // 聊天输入区的文件上传：chatFile=1 同时生成聊天文件消息（QQ 式留在聊天记录）
+      const d = await apiUpload<{ file: { originalName: string } }>(`/api/projects/${id}/files`, file, undefined, undefined, { chatFile: "1" });
       await afterSaved([refreshFiles()]);
       return d.file.originalName;
     },

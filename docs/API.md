@@ -86,12 +86,13 @@ npm run dev                 # 启动 http://localhost:3000
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/projects/[id]/chat` | 最新 50 条（时间正序）；带 `?afterId=N` 增量拉取 id 大于 N 的消息（前端轮询用） |
+| GET | `/api/projects/[id]/chat` | 最新 50 条（时间正序）；带 `?afterId=N` 增量拉取 id 大于 N 的消息（前端轮询用）；文件消息含 `attachment` |
 | POST | `/api/projects/[id]/chat` | `{ content, replyToId?, taskId? }`；消息可回复、可关联任务卡片；@提及触发通知 |
+| GET | `/api/projects/[id]/chat/search` | **聊天记录搜索**：`?q=&type=all\|text\|link\|file\|author&authorId=`（人名需 authorId）；原文/文件名/作者名综合或分类过滤，新→旧最多 50 条 |
 | POST | `/api/chat/[id]/like` | 切换赞同 |
 | PUT | `/api/chat/[id]/pin` | admin `{ pinned: bool }` 置顶为公告（同项目同时只有一条置顶） |
 
-消息对象包含：`author.displayName`、`likeCount`、`likedByMe`、`replyTo`（摘要）、`task`（关联任务卡片：code/title/status）。
+消息对象包含：`author.displayName`、`likeCount`、`likedByMe`、`replyTo`（摘要）、`task`（关联任务卡片：code/title/status）、`attachment`（文件消息：`{ id, name, size }`，从聊天上传的文件同时进入项目文件库，撤回后该字段为 null）。
 
 ### 文件
 
@@ -109,6 +110,7 @@ npm run dev                 # 启动 http://localhost:3000
 | POST | `/api/dm` | 登录 | `{ peerId }` 与同团队成员打开（或创建）一对一会话；非同团队返回 403；重新发起会自动取消我方的隐藏 |
 | GET | `/api/dm/contacts` | 登录 | 可私聊的联系人 = 我所有团队的其他成员（去重，在线优先排序） |
 | GET | `/api/dm/[id]/messages?afterId=` | 会话双方 | 最新 80 条（时间正序）；`afterId` 增量拉取；文件消息含 `attachment` 字段 |
+| GET | `/api/dm/[id]/messages/search` | 会话双方 | **聊天记录搜索**：`?q=&type=all\|text\|link\|file\|author&authorId=`（人名限会话双方）；结构同消息列表，新→旧最多 50 条 |
 | POST | `/api/dm/[id]/messages` | 会话双方 | `{ content }`（≤2000 字）；发送后通知对方（点击通知直达会话）；若对方隐藏过会话则自动恢复显示 |
 | POST | `/api/dm/[id]/files` | 会话双方 | `multipart/form-data`：`file`（≤100MB）发送文件消息，存 `uploads/`；通知文案为「给你发来文件《文件名》」 |
 | GET | `/api/dm/files/[id]` | 会话双方 | 下载私聊文件（校验会话双方身份，中文文件名 RFC 5987 编码） |

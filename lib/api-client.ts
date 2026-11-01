@@ -37,13 +37,14 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
   });
 }
 
-export async function uploadFile<T>(path: string, file: File, taskId?: number, milestoneId?: number): Promise<T> {
+export async function uploadFile<T>(path: string, file: File, taskId?: number, milestoneId?: number, extra?: Record<string, string>): Promise<T> {
   if (file.size > MAX_UPLOAD_BYTES) throw new Error(UPLOAD_LIMIT_MESSAGE);
   if (file.size === 0) throw new Error("文件为空");
   const form = new FormData();
   form.append("file", file);
   if (taskId) form.append("taskId", String(taskId));
   if (milestoneId) form.append("milestoneId", String(milestoneId));
+  for (const [key, value] of Object.entries(extra ?? {})) form.append(key, value);
   return requestJson<T>(path, { method: "POST", body: form });
 }
 
@@ -168,6 +169,7 @@ export type ChatMessage = {
   likedByMe: boolean;
   replyTo: { id: number; content: string; authorName: string } | null;
   task: { id: number; code: string; title: string; status: string } | null;
+  attachment: { id: number; name: string; size: number } | null;
 };
 
 export type ActivityItem = {

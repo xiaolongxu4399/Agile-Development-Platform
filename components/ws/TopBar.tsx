@@ -38,15 +38,18 @@ export function TopBar() {
       )}
 
       <div className="ws-top-right">
-        <div className="ws-searchbox" title="过滤当前任务列表；Ctrl K 打开全局搜索">
-          <Icon name="search" size={13} />
-          <input
-            placeholder={ws.railView === "todos" ? "搜索我的待办…" : project ? `搜索 ${project.name} 的任务…` : "搜索任务…"}
-            value={ws.taskSearch}
-            onChange={(e) => ws.setTaskSearch(e.target.value)}
-          />
-          <kbd>Ctrl K</kbd>
-        </div>
+        {/* 任务过滤搜索仅属于「项目任务」页：其他视图不渲染，避免误导（Ctrl K 全局搜索不受影响） */}
+        {ws.railView === "projects" && ws.focusSection === "tasks" && (
+          <div className="ws-searchbox" title="过滤当前项目的任务列表；Ctrl K 打开全局搜索">
+            <Icon name="search" size={13} />
+            <input
+              placeholder={project ? `搜索 ${project.name} 的任务…` : "搜索任务…"}
+              value={ws.taskSearch}
+              onChange={(e) => ws.setTaskSearch(e.target.value)}
+            />
+            <kbd>Ctrl K</kbd>
+          </div>
+        )}
 
         <div className="ws-bell-wrap">
           <button className="ws-rail-btn" style={{ width: 34, height: 34 }} title="通知" onClick={() => setShowNotif((v) => !v)}>

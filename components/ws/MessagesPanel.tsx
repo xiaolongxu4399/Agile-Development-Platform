@@ -10,6 +10,10 @@ import { toast } from "@/lib/toast";
 
 const EMOJIS = ["👍", "🎉", "😂", "🙏", "💪", "👀", "❤️", "🔥"];
 
+type DmHit = DmMessage;
+type SearchType = "all" | "text" | "link" | "file" | "author";
+const SEARCH_TABS: [SearchType, string][] = [["all", "全部"], ["text", "原文"], ["link", "链接"], ["file", "文件"], ["author", "人名"]];
+
 export function MessagesPanel() {
   const ws = useWorkspace();
   const [activeId, setActiveId] = useState<number | null>(ws.dmTargetId);
@@ -184,6 +188,13 @@ function DmThread({ conversationId }: { conversationId: number }) {
   const [uploading, setUploading] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQ, setSearchQ] = useState("");
+  const [searchType, setSearchType] = useState<SearchType>("all");
+  const [searchAuthor, setSearchAuthor] = useState<number | null>(null);
+  const [hits, setHits] = useState<DmHit[] | null>(null);
+  const [searchErr, setSearchErr] = useState("");
+  const searchReq = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -267,6 +278,34 @@ function DmThread({ conversationId }: { conversationId: number }) {
     }
   }
 
+  // 聊天记录搜索：300ms 防抖；人名分类需先选会话中的一方；请求序号防过期结果覆盖
+  useEffect(() => {
+    if (!searchOpen) return;
+    if (searchType === "author" && searchAuthor === null) return;
+    const req = ++searchReq.current;
+    const timer = setTimeout(async () => {
+      const query = new URLSearchParams({ type: searchType });
+      if (searchQ.trim()) query.set("q", searchQ.trim());
+      if (searchType === "author" && searchAuthor) query.set("authorId", String(searchAuthor));
+      try {
+        const d = await api<{ hits: DmHit[] }>(`/api/dm/${conversationId}/messages/search?${query}`);
+        if (searchReq.current === req) { setHits(d.hits); setSearchErr(""); }
+      } catch (e) {
+        if (searchReq.current === req) setSearchErr((e as Error).message);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchOpen, searchQ, searchType, searchAuthor, conversationId]);
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchQ("");
+    setSearchType("all");
+    setSearchAuthor(null);
+    setHits(null);
+    setSearchErr("");
+  }
+
   // 我发出的最后一条消息：展示已读回执（日期分隔用相邻比较，不在渲染中改写变量）
   const lastMineId = [...messages].reverse().find((m) => m.mine)?.id ?? null;
 
@@ -283,17 +322,75 @@ function DmThread({ conversationId }: { conversationId: number }) {
             <span className={`ws-online-text ${partner.online ? "on" : ""}`}>{partner.online ? "在线" : "离线"}</span>
           </>
         )}
+        <button className="ws-icon-btn" style={{ marginLeft: "auto" }} title="搜索聊天记录" aria-label="搜索聊天记录"
+          onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}>
+          <Icon name="search" size={14} />
+        </button>
       </div>
+
+      {searchOpen && (
+        <div className="ws-chat-search">
+          <div className="ws-chat-search-row">
+            <div className="ws-search" style={{ margin: 0, flex: 1 }}>
+              <Icon name="search" size={13} />
+              <input placeholder="搜索聊天记录…（原文 / 文件名 / 对方名）" value={searchQ} onChange={(e) => setSearchQ(e.target.value)} />
+            </div>
+          </div>
+          <div className="ws-chat-search-row" role="group" aria-label="搜索分类">
+            {SEARCH_TABS.map(([value, label]) => (
+              <button key={value} className={`ws-filter-chip ${searchType === value ? "active" : ""}`}
+                onClick={() => { setSearchType(value); if (value !== "author") setSearchAuthor(null); }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {searchType === "author" && (
+            <div className="ws-chat-search-row" role="group" aria-label="选择成员">
+              <button className={`ws-filter-chip ${searchAuthor === ws.me.id ? "active" : ""}`} onClick={() => setSearchAuthor(searchAuthor === ws.me.id ? null : ws.me.id)}>我</button>
+              {partner && (
+                <button className={`ws-filter-chip ${searchAuthor === partner.userId ? "active" : ""}`} onClick={() => setSearchAuthor(searchAuthor === partner.userId ? null : partner.userId)}>
+                  <Avatar name={partner.displayName} colorKey={partner.userId} size="sm" />{partner.displayName}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div
         className="ws-dm-scroll"
-        ref={scrollRef}
-        onScroll={(e) => {
+        ref={searchOpen ? undefined : scrollRef}
+        onScroll={searchOpen ? undefined : (e) => {
           const el = e.currentTarget;
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
         }}
       >
-        {failed && <div className="ws-error" role="alert" style={{ margin: 12 }}>消息加载失败：{hint}<button className="ws-btn" style={{ marginLeft: 10 }} onClick={load}>重试</button></div>}
+        {searchOpen ? (
+          <>
+            {searchErr && <div className="ws-error" role="alert" style={{ margin: 12 }}>{searchErr}</div>}
+            {!searchErr && searchType === "author" && searchAuthor === null && <div className="ws-empty" style={{ margin: "20px 16px" }}>先选择要查找的成员</div>}
+            {!searchErr && !(searchType === "author" && searchAuthor === null) && hits === null && <div className="ws-empty" style={{ margin: "20px 16px" }}>输入关键词开始搜索…</div>}
+            {!searchErr && !(searchType === "author" && searchAuthor === null) && hits?.length === 0 && <div className="ws-empty" style={{ margin: "20px 16px" }}>没有找到匹配的聊天记录</div>}
+            {!searchErr && !(searchType === "author" && searchAuthor === null) && hits?.map((hit) => (
+              <div key={hit.id} className="ws-hit">
+                <Avatar name={hit.senderName} colorKey={hit.senderId} />
+                <div className="ws-hit-main">
+                  <div className="ws-hit-head"><b>{hit.mine ? "我" : hit.senderName}</b><span>{fmtDateShort(hit.createdAt)} {fmtTime(hit.createdAt)}</span></div>
+                  {hit.attachment ? (
+                    <a className="ws-dm-file" href={`/api/dm/files/${hit.attachment.id}`} title="点击下载">
+                      <span className="ws-dm-file-ic"><Icon name="file" size={16} /></span>
+                      <span className="ws-dm-file-main"><b>{hit.attachment.name}</b><small>{fmtSize(hit.attachment.size)} · 点击下载</small></span>
+                      <Icon name="download" size={14} />
+                    </a>
+                  ) : (
+                    <div className="ws-hit-content">{hit.content}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </>
+        ) : (<>
+          {failed && <div className="ws-error" role="alert" style={{ margin: 12 }}>消息加载失败：{hint}<button className="ws-btn" style={{ marginLeft: 10 }} onClick={load}>重试</button></div>}
         {!failed && messages.length === 0 && (
           <div className="ws-empty" style={{ margin: "24px 16px" }}>向 {partner?.displayName ?? "对方"} 打个招呼吧 👋</div>
         )}
@@ -323,6 +420,7 @@ function DmThread({ conversationId }: { conversationId: number }) {
             </div>
           );
         })}
+        </>)}
       </div>
 
       <div className="ws-dm-input">

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { chatMessages, chatLikes, users, tasks, projects, teamMembers } from "@/db/schema";
+import { attachments, chatMessages, chatLikes, users, tasks, projects, teamMembers } from "@/db/schema";
 import {
   requireUser, parseBody, parseId, requireProjectAccess, ApiError, handleApiError, displayName, taskCode,
 } from "@/lib/api";
@@ -73,11 +73,20 @@ async function decorateMessages(rows: (typeof chatMessages.$inferSelect)[], curr
         .where(inArray(tasks.id, taskIds))
     : [];
 
+  const attIds = [...new Set(rows.map((m) => m.attachmentId).filter((v): v is number => v !== null))];
+  const attRows = attIds.length
+    ? await db
+        .select({ id: attachments.id, name: attachments.originalName, size: attachments.size })
+        .from(attachments)
+        .where(inArray(attachments.id, attIds))
+    : [];
+
   return rows.map((m) => {
     const author = authors.find((a) => a.id === m.authorId);
     const reply = replyTargets.find((r) => r.id === m.replyToId);
     const replyAuthor = reply ? authors.find((a) => a.id === reply.authorId) : null;
     const task = linkedTasks.find((t) => t.id === m.taskId);
+    const att = m.attachmentId ? attRows.find((a) => a.id === m.attachmentId) : null;
     return {
       id: m.id,
       content: m.content,
@@ -99,6 +108,7 @@ async function decorateMessages(rows: (typeof chatMessages.$inferSelect)[], curr
           }
         : null,
       task: task ? { id: task.id, code: taskCode(task.key, task.number), title: task.title, status: task.status } : null,
+      attachment: att ? { id: att.id, name: att.name, size: att.size } : null,
     };
   });
 }

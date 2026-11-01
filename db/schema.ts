@@ -195,6 +195,8 @@ export const comments = pgTable("comments", {
 /* ============ 项目内团队聊天 ============ */
 
 // 聊天消息表：项目频道内的消息流，支持回复、关联任务、置顶、@提及
+// attachmentId 非空即文件消息（正文存原始文件名）；文件本体即项目文件（attachments），
+// 撤回文件后消息保留但卡片降级为「文件已撤回」
 export const chatMessages = pgTable("chat_messages", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -202,6 +204,7 @@ export const chatMessages = pgTable("chat_messages", {
   content: text("content").notNull(),                // 消息内容
   replyToId: integer("reply_to_id").references((): AnyPgColumn => chatMessages.id, { onDelete: "cascade" }), // 回复的目标消息
   taskId: integer("task_id").references(() => tasks.id, { onDelete: "set null" }),   // 关联任务
+  attachmentId: integer("attachment_id").references((): AnyPgColumn => attachments.id, { onDelete: "set null" }), // 文件消息
   pinned: boolean("pinned").notNull().default(false), // 是否置顶（项目公告）
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });

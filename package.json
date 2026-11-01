@@ -22,6 +22,7 @@
     "db:add-file-cleanup": "tsx db/add-file-cleanup.ts",
     "db:add-direct-messages": "tsx db/add-direct-messages.ts",
     "db:add-docs": "tsx db/add-docs.ts",
+    "db:add-chat-attachments": "tsx db/add-chat-attachments.ts",
     "db:seed": "tsx db/seed.ts",
     "db:studio": "drizzle-kit studio"
   },
