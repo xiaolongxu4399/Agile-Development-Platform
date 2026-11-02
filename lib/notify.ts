@@ -1,5 +1,7 @@
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { db } from "@/db";
-import { notifications } from "@/db/schema";
+import { dmAttachments, dmMessages, notifications } from "@/db/schema";
+import { dmNotificationTitle } from "./dm";
 
 /* 站内通知：被指派 / 被@提及 / 我的任务有新评论 */
 
@@ -64,4 +66,60 @@ export async function notifyMentions(input: {
       }, executor),
     ),
   );
+}
+
+// 私信通知（合并提醒）：同一会话同一接收人若已有「未读」私信通知，则更新其标题而不新建——
+// 连发一长串私信只提醒一次。会话是一对一，未读通知必然对应唯一发件人，无需额外字段。
+// 标题 = 人名+动作（dmNotificationTitle），多条时括注未读条数与本批文件名（按先后）。
+export async function notifyDirectMessage(input: {
+  conversationId: number;
+  recipientId: number;
+  actorId: number;
+  actorName: string;
+}, executor: Pick<typeof db, "select" | "insert" | "update"> = db) {
+  if (input.recipientId === input.actorId) return;
+
+  // 以会话内真实的未读消息为准（而非通知计数），读过的批次自动结束合并
+  const unreads = await executor
+    .select({ id: dmMessages.id, attachmentId: dmMessages.attachmentId })
+    .from(dmMessages)
+    .where(and(
+      eq(dmMessages.conversationId, input.conversationId),
+      eq(dmMessages.senderId, input.actorId),
+      isNull(dmMessages.readAt),
+    ))
+    .orderBy(asc(dmMessages.id));
+  const attachmentIds = [...new Set(unreads.map((m) => m.attachmentId).filter((v): v is number => v !== null))];
+  const nameRows = attachmentIds.length
+    ? await executor
+        .select({ id: dmAttachments.id, name: dmAttachments.originalName })
+        .from(dmAttachments)
+        .where(inArray(dmAttachments.id, attachmentIds))
+    : [];
+  const fileNames = attachmentIds.map((id) => nameRows.find((r) => r.id === id)?.name ?? "未知文件");
+  const title = dmNotificationTitle(input.actorName, unreads.length, fileNames);
+
+  const [existing] = await executor
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(and(
+      eq(notifications.userId, input.recipientId),
+      eq(notifications.type, "dm"),
+      eq(notifications.entityId, input.conversationId),
+      eq(notifications.read, false),
+    ))
+    .orderBy(asc(notifications.id))
+    .limit(1);
+
+  if (existing) {
+    await executor.update(notifications).set({ title }).where(eq(notifications.id, existing.id));
+  } else {
+    await executor.insert(notifications).values({
+      userId: input.recipientId,
+      type: "dm",
+      title,
+      entityType: "dm",
+      entityId: input.conversationId,
+    });
+  }
 }

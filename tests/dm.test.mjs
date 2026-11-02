@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { countUnread, dmPair, dmPreview } from "../lib/dm.ts";
+import { countUnread, dmNotificationTitle, dmPair, dmPreview } from "../lib/dm.ts";
 
 test("dmPair orders any direction into one canonical pair", () => {
   assert.deepEqual(dmPair(2, 7), [2, 7]);
@@ -30,4 +30,18 @@ test("unread counts only partner messages without readAt", () => {
   assert.equal(countUnread(messages, 1), 2);
   assert.equal(countUnread(messages, 2), 1);
   assert.equal(countUnread([], 1), 0);
+});
+
+test("dm notification titles merge a batch of unread messages", () => {
+  assert.equal(dmNotificationTitle("徐小龙", 1, []), "徐小龙 给你发来私信");
+  assert.equal(dmNotificationTitle("徐小龙", 1, ["设计稿.fig"]), "徐小龙 给你发来文件《设计稿.fig》");
+  assert.equal(dmNotificationTitle("徐小龙", 4, []), "徐小龙 给你发来私信（4 条未读）");
+  assert.equal(
+    dmNotificationTitle("徐小龙", 5, ["会议纪要.txt", "设计稿.png"]),
+    "徐小龙 给你发来私信（5 条未读；文件：会议纪要.txt、设计稿.png）",
+  );
+  assert.equal(
+    dmNotificationTitle("徐小龙", 9, ["1", "2", "3", "4", "5", "6", "7"]),
+    "徐小龙 给你发来私信（9 条未读；文件：1、2、3、4、5 等 7 个文件）",
+  );
 });

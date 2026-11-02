@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gt } from "drizzle-orm";
 import { db } from "@/db";
 import { dmAttachments, dmConversations, dmMessages, users } from "@/db/schema";
 import { requireUser, parseBody, parseId, ApiError, handleApiError, displayName } from "@/lib/api";
-import { notify } from "@/lib/notify";
+import { notifyDirectMessage } from "@/lib/notify";
 
 // 私聊消息：
 // GET  /api/dm/[id]/messages?afterId=  → 会话消息（不传 afterId 取最新 80 条；传了则增量拉取）
@@ -108,14 +108,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       })
       .where(eq(dmConversations.id, conversationId));
 
-    // 站内通知对方：点击直达该会话（entityType=dm，entityId=会话 id）
-    await notify({
-      userId: partnerId,
+    // 站内通知对方（合并提醒）：点击直达该会话（entityType=dm，entityId=会话 id）
+    await notifyDirectMessage({
+      conversationId,
+      recipientId: partnerId,
       actorId: user.id,
-      type: "dm",
-      title: `${displayName(user)} 给你发来私信`,
-      entityType: "dm",
-      entityId: conversationId,
+      actorName: displayName(user),
     });
 
     return Response.json({

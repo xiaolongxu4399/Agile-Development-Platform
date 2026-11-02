@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { dmAttachments, dmConversations, dmMessages } from "@/db/schema";
 import { uploadPath } from "@/lib/file-cleanup";
 import { requireUser, parseId, ApiError, handleApiError, displayName } from "@/lib/api";
-import { notify } from "@/lib/notify";
+import { notifyDirectMessage } from "@/lib/notify";
 import { MAX_UPLOAD_BYTES, UPLOAD_LIMIT_MESSAGE } from "@/lib/upload-limits";
 
 // 私聊文件：POST /api/dm/[id]/files  multipart { file }  发送文件消息（≤100MB，存 uploads/）
@@ -66,13 +66,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       })
       .where(eq(dmConversations.id, conversationId));
 
-    await notify({
-      userId: partnerId,
+    await notifyDirectMessage({
+      conversationId,
+      recipientId: partnerId,
       actorId: user.id,
-      type: "dm",
-      title: `${displayName(user)} 给你发来文件《${attachment.originalName}》`,
-      entityType: "dm",
-      entityId: conversationId,
+      actorName: displayName(user),
     });
 
     pendingStoredName = null;

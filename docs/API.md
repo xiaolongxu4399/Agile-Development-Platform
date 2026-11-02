@@ -112,7 +112,8 @@ npm run dev                 # 启动 http://localhost:3000
 | GET | `/api/dm/[id]/messages?afterId=` | 会话双方 | 最新 80 条（时间正序）；`afterId` 增量拉取；文件消息含 `attachment` 字段 |
 | GET | `/api/dm/[id]/messages/search` | 会话双方 | **聊天记录搜索**：`?q=&type=all\|text\|link\|file\|author&authorId=`（人名限会话双方）；结构同消息列表，新→旧最多 50 条 |
 | POST | `/api/dm/[id]/messages` | 会话双方 | `{ content }`（≤2000 字）；发送后通知对方（点击通知直达会话）；若对方隐藏过会话则自动恢复显示 |
-| POST | `/api/dm/[id]/files` | 会话双方 | `multipart/form-data`：`file`（≤100MB）发送文件消息，存 `uploads/`；通知文案为「给你发来文件《文件名》」 |
+| POST | `/api/dm/[id]/files` | 会话双方 | `multipart/form-data`：`file`（≤100MB）发送文件消息，存 `uploads/` |
+| —— | 私信通知合并 | —— | 同一会话同一批未读只提醒一次：连发多条/文件会**更新**已有未读通知的标题（`人名+动作（N 条未读；文件：…按先后…）`）；通知已读后下一批重新开始 |
 | GET | `/api/dm/files/[id]` | 会话双方 | 下载私聊文件（校验会话双方身份，中文文件名 RFC 5987 编码） |
 | PUT | `/api/dm/[id]/read` | 会话双方 | 标记对方发来的未读消息为已读（幂等），返回 `{ updated }` |
 | PUT | `/api/dm/[id]/hide` | 会话双方 | 隐藏会话（仅从我的列表移除，消息保留）；对方来新消息或我重新发起时自动恢复 |

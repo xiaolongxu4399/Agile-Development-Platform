@@ -18,3 +18,16 @@ export function dmPreview(content: string | null | undefined, limit = 60): strin
 export function countUnread(messages: { senderId: number; readAt: string | Date | null }[], myId: number): number {
   return messages.filter((m) => m.senderId !== myId && m.readAt === null).length;
 }
+
+// 私信通知标题（合并提醒）：同一批未读只保留一条通知。
+// 大标题保持「人名+动作」；多条时括注未读条数与本批发送的文件（按先后顺序，最多列 5 个）。
+export function dmNotificationTitle(actorName: string, unreadCount: number, fileNames: string[]): string {
+  if (unreadCount <= 1 && fileNames.length === 1) return `${actorName} 给你发来文件《${fileNames[0]}》`;
+  if (unreadCount <= 1) return `${actorName} 给你发来私信`;
+  const parts = [`${unreadCount} 条未读`];
+  if (fileNames.length > 0) {
+    const shown = fileNames.slice(0, 5).join("、");
+    parts.push(`文件：${shown}${fileNames.length > 5 ? ` 等 ${fileNames.length} 个文件` : ""}`);
+  }
+  return `${actorName} 给你发来私信（${parts.join("；")}）`;
+}
