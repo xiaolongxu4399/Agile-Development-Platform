@@ -25,7 +25,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return Response.json({ hits: [] });
     }
 
-    const conds = [eq(chatMessages.projectId, projectId)];
+    const conds = [eq(chatMessages.projectId, projectId), eq(chatMessages.recalled, false)];
     if (type === "link") conds.push(sql`(${chatMessages.content} ~* 'https?://')`);
     if (type === "file") conds.push(isNotNull(chatMessages.attachmentId));
     if (type === "author" && authorId) conds.push(eq(chatMessages.authorId, authorId));

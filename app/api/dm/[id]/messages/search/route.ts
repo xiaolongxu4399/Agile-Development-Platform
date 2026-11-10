@@ -36,7 +36,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return Response.json({ hits: [] });
     }
 
-    const conds = [eq(dmMessages.conversationId, conversationId)];
+    const conds = [eq(dmMessages.conversationId, conversationId), eq(dmMessages.recalled, false)];
     if (type === "link") conds.push(sql`(${dmMessages.content} ~* 'https?://')`);
     if (type === "file") conds.push(isNotNull(dmMessages.attachmentId));
     if (type === "author" && authorId) conds.push(eq(dmMessages.senderId, authorId));

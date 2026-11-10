@@ -10,7 +10,15 @@ import { toast } from "@/lib/toast";
 
 const EMOJIS = ["👍", "🎉", "😂", "🙏", "💪", "👀", "❤️", "🔥"];
 
-type DmHit = DmMessage;
+type DmHit = {
+  id: number;
+  content: string;
+  createdAt: string;
+  senderId: number;
+  senderName: string;
+  mine: boolean;
+  attachment: { id: number; name: string; size: number } | null;
+};
 type SearchType = "all" | "text" | "link" | "file" | "author";
 const SEARCH_TABS: [SearchType, string][] = [["all", "全部"], ["text", "原文"], ["link", "链接"], ["file", "文件"], ["author", "人名"]];
 
@@ -188,6 +196,10 @@ function DmThread({ conversationId }: { conversationId: number }) {
   const [uploading, setUploading] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [dmReply, setDmReply] = useState<{ id: number; content: string; mine: boolean } | null>(null);
+  const [olderMessages, setOlderMessages] = useState<DmMessage[] | null>(null);
+  const [noMoreOlder, setNoMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQ, setSearchQ] = useState("");
   const [searchType, setSearchType] = useState<SearchType>("all");
@@ -246,11 +258,12 @@ function DmThread({ conversationId }: { conversationId: number }) {
     setHint("");
     try {
       const d = await api<{ message: DmMessage }>(`/api/dm/${conversationId}/messages`, {
-        method: "POST", json: { content },
+        method: "POST", json: { content, replyToId: dmReply?.id ?? null },
       });
       stickToBottom.current = true;
       setMessages((items) => [...items, d.message]);
       setText("");
+      setDmReply(null);
       void ws.refreshDms().catch(() => {});
     } catch (e) {
       setHint((e as Error).message);
@@ -306,8 +319,89 @@ function DmThread({ conversationId }: { conversationId: number }) {
     setSearchErr("");
   }
 
+  // 展示的消息 = 本地翻页前缀 + 窗口；翻页后轮询刷新仍保留更早历史
+  const allMessages = olderMessages
+    ? [...olderMessages, ...messages.filter((m) => !olderMessages.some((o) => o.id === m.id))]
+    : messages;
+
+  // 定位并高亮一条消息（搜索跳转）；DOM 提交有延迟，轻量重试
+  function flashMessage(id: number, tries = 0) {
+    const el = document.getElementById(`dm-m-${id}`);
+    if (el) {
+      el.scrollIntoView({ block: "center" });
+      el.classList.add("ws-flash");
+      setTimeout(() => el.classList.remove("ws-flash"), 1700);
+    } else if (tries < 12) {
+      setTimeout(() => flashMessage(id, tries + 1), 60);
+    }
+  }
+
+  // 跳转到任意历史消息：已加载直接定位，否则向前翻页（最多 10 页）
+  async function jumpTo(id: number) {
+    closeSearch();
+    if (allMessages.some((m) => m.id === id)) { flashMessage(id); return; }
+    let cursor = allMessages[0]?.id ?? id + 1;
+    for (let i = 0; i < 10; i++) {
+      try {
+        const d = await api<{ messages: DmMessage[] }>(`/api/dm/${conversationId}/messages?beforeId=${cursor}`);
+        if (d.messages.length === 0) { setNoMoreOlder(true); toast("该消息已无法加载"); return; }
+        const prefix = olderMessages ? [...d.messages, ...olderMessages.filter((o) => !d.messages.some((n) => n.id === o.id))] : d.messages;
+        setOlderMessages(prefix);
+        if (d.messages.length < 80) setNoMoreOlder(true);
+        if (d.messages.some((m) => m.id === id)) { flashMessage(id); return; }
+        if (d.messages.length < 80) { toast("已加载全部历史，未找到该消息"); return; }
+        cursor = d.messages[0].id;
+      } catch (e) {
+        toast((e as Error).message, "error");
+        return;
+      }
+    }
+    toast("历史记录过多，请缩小搜索范围");
+  }
+
+  // 加载更早的消息（保持阅读位置）
+  async function loadOlder() {
+    const first = allMessages[0];
+    if (!first || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const d = await api<{ messages: DmMessage[] }>(`/api/dm/${conversationId}/messages?beforeId=${first.id}`);
+      if (d.messages.length === 0) { setNoMoreOlder(true); return; }
+      if (d.messages.length < 80) setNoMoreOlder(true);
+      const el = scrollRef.current;
+      const prevHeight = el?.scrollHeight ?? 0;
+      const prevTop = el?.scrollTop ?? 0;
+      setOlderMessages(olderMessages ? [...d.messages, ...olderMessages] : d.messages);
+      setTimeout(() => {
+        const el2 = scrollRef.current;
+        if (el2) el2.scrollTop = el2.scrollHeight - prevHeight + prevTop;
+      }, 60);
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  async function recallMessage(id: number) {
+    try {
+      await api(`/api/dm/${conversationId}/messages/${id}/recall`, { method: "POST", json: {} });
+      load();
+      toast("已撤回");
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  }
+
+  // 撤回窗口计时（避免渲染中直接调用 Date.now）
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
   // 我发出的最后一条消息：展示已读回执（日期分隔用相邻比较，不在渲染中改写变量）
-  const lastMineId = [...messages].reverse().find((m) => m.mine)?.id ?? null;
+  const lastMineId = [...allMessages].reverse().find((m) => m.mine)?.id ?? null;
 
   return (
     <section className="ws-dm-thread" aria-label="私信消息">
@@ -372,12 +466,12 @@ function DmThread({ conversationId }: { conversationId: number }) {
             {!searchErr && !(searchType === "author" && searchAuthor === null) && hits === null && <div className="ws-empty" style={{ margin: "20px 16px" }}>输入关键词开始搜索…</div>}
             {!searchErr && !(searchType === "author" && searchAuthor === null) && hits?.length === 0 && <div className="ws-empty" style={{ margin: "20px 16px" }}>没有找到匹配的聊天记录</div>}
             {!searchErr && !(searchType === "author" && searchAuthor === null) && hits?.map((hit) => (
-              <div key={hit.id} className="ws-hit">
+              <div key={hit.id} className="ws-hit ws-hit-jump" title="点击定位到原消息" onClick={() => void jumpTo(hit.id)}>
                 <Avatar name={hit.senderName} colorKey={hit.senderId} />
                 <div className="ws-hit-main">
                   <div className="ws-hit-head"><b>{hit.mine ? "我" : hit.senderName}</b><span>{fmtDateShort(hit.createdAt)} {fmtTime(hit.createdAt)}</span></div>
                   {hit.attachment ? (
-                    <a className="ws-dm-file" href={`/api/dm/files/${hit.attachment.id}`} title="点击下载">
+                    <a className="ws-dm-file" href={`/api/dm/files/${hit.attachment.id}`} title="点击下载" onClick={(e) => e.stopPropagation()}>
                       <span className="ws-dm-file-ic"><Icon name="file" size={16} /></span>
                       <span className="ws-dm-file-main"><b>{hit.attachment.name}</b><small>{fmtSize(hit.attachment.size)} · 点击下载</small></span>
                       <Icon name="download" size={14} />
@@ -391,39 +485,74 @@ function DmThread({ conversationId }: { conversationId: number }) {
           </>
         ) : (<>
           {failed && <div className="ws-error" role="alert" style={{ margin: 12 }}>消息加载失败：{hint}<button className="ws-btn" style={{ marginLeft: 10 }} onClick={load}>重试</button></div>}
-        {!failed && messages.length === 0 && (
-          <div className="ws-empty" style={{ margin: "24px 16px" }}>向 {partner?.displayName ?? "对方"} 打个招呼吧 👋</div>
-        )}
-        {messages.map((m, i) => {
-          const day = dayKey(m.createdAt);
-          const showSep = i === 0 || dayKey(messages[i - 1].createdAt) !== day;
-          return (
-            <div key={m.id}>
-              {showSep && <div className="ws-date-sep"><span>{fmtDateShort(m.createdAt)}</span></div>}
-              <div className={`ws-dm-msg ${m.mine ? "mine" : ""}`}>
-                {m.attachment ? (
-                  <a className="ws-dm-file" href={`/api/dm/files/${m.attachment.id}`} title="点击下载">
-                    <span className="ws-dm-file-ic"><Icon name="file" size={16} /></span>
-                    <span className="ws-dm-file-main">
-                      <b>{m.attachment.name}</b>
-                      <small>{fmtSize(m.attachment.size)} · 点击下载</small>
-                    </span>
-                    <Icon name="download" size={14} />
-                  </a>
+          {!noMoreOlder && allMessages.length > 0 && (
+            <button className="ws-load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>
+              {loadingOlder ? "加载中…" : "加载更早的消息"}
+            </button>
+          )}
+          {noMoreOlder && allMessages.length > 0 && <div className="ws-load-older done">已加载全部历史</div>}
+          {!failed && allMessages.length === 0 && (
+            <div className="ws-empty" style={{ margin: "24px 16px" }}>向 {partner?.displayName ?? "对方"} 打个招呼吧 👋</div>
+          )}
+          {allMessages.map((m, i) => {
+            const day = dayKey(m.createdAt);
+            const showSep = i === 0 || dayKey(allMessages[i - 1].createdAt) !== day;
+            const canRecall = m.mine && !m.recalled
+              && nowTick - new Date(m.createdAt).getTime() < 2 * 60 * 1000;
+            return (
+              <div key={m.id} id={`dm-m-${m.id}`}>
+                {showSep && <div className="ws-date-sep"><span>{fmtDateShort(m.createdAt)}</span></div>}
+                {m.recalled ? (
+                  <div className={`ws-dm-msg ${m.mine ? "mine" : ""}`}>
+                    <div className="ws-recalled">{m.mine ? "你" : partner?.displayName ?? "对方"} 撤回了一条消息</div>
+                  </div>
                 ) : (
-                  <div className="ws-dm-bubble">{m.content}</div>
+                  <div className="ws-dm-msgwrap">
+                    <div className={`ws-dm-msg ${m.mine ? "mine" : ""}`}>
+                      <div className="ws-dm-msgcol">
+                        {m.replyTo && (
+                          <div className="ws-dm-quote">回复 {m.replyTo.mine ? "我" : partner?.displayName ?? "对方"}：{m.replyTo.content}</div>
+                        )}
+                        {m.attachment ? (
+                        <a className="ws-dm-file" href={`/api/dm/files/${m.attachment.id}`} title="点击下载">
+                          <span className="ws-dm-file-ic"><Icon name="file" size={16} /></span>
+                          <span className="ws-dm-file-main">
+                            <b>{m.attachment.name}</b>
+                            <small>{fmtSize(m.attachment.size)} · 点击下载</small>
+                          </span>
+                          <Icon name="download" size={14} />
+                        </a>
+                      ) : (
+                        <div className="ws-dm-bubble">{m.content}</div>
+                      )}
+                      </div>
+                    </div>
+                    <div className="ws-dm-quick">
+                      <button title="引用回复" onClick={() => { setDmReply({ id: m.id, content: (m.attachment?.name ?? m.content).slice(0, 40), mine: m.mine }); inputRef.current?.focus(); }}>回复</button>
+                      {canRecall && <button title="撤回（2 分钟内）" onClick={() => void recallMessage(m.id)}>撤回</button>}
+                    </div>
+                  </div>
+                )}
+                {m.id === lastMineId && !m.recalled && (
+                  <div className={`ws-dm-receipt ${m.mine ? "mine" : ""}`}>{m.readAt ? "已读" : "未读"}</div>
                 )}
               </div>
-              {m.id === lastMineId && (
-                <div className={`ws-dm-receipt ${m.mine ? "mine" : ""}`}>{m.readAt ? "已读" : "未读"}</div>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
         </>)}
       </div>
 
       <div className="ws-dm-input">
+        {dmReply && (
+          <div className="ws-reply-banner">
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              回复 {dmReply.mine ? "我" : partner?.displayName ?? "对方"}：{dmReply.content}
+            </span>
+            <button className="ws-icon-btn" style={{ width: 20, height: 20 }} onClick={() => setDmReply(null)}>
+              <Icon name="x" size={12} />
+            </button>
+          </div>
+        )}
         {hint && !failed && <div className="ws-error" style={{ marginTop: 0, marginBottom: 6 }}>{hint}</div>}
         {showEmoji && (
           <div className="ws-member-pick" style={{ width: "auto", display: "flex", gap: 2, left: 34 }}>

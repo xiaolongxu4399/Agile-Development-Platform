@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { attachments, chatMessages, chatLikes, users, tasks, projects, teamMembers } from "@/db/schema";
 import {
@@ -7,7 +7,9 @@ import {
 } from "@/lib/api";
 import { notifyMentions } from "@/lib/notify";
 
-// 项目聊天：GET /api/projects/[id]/chat?afterId=  消息列表（不传 afterId 取最新 50 条；传了则增量拉取）
+// 项目聊天：GET /api/projects/[id]/chat?afterId=/beforeId=/pinned=1
+//   不带参数取最新 50 条；afterId 增量拉取；beforeId 向前翻页（加载更早，供搜索跳转）；
+//   pinned=1 返回全部公告（新→旧，公告列表用）
 //           POST { content, replyToId?, taskId? }  发送（@提及触发通知）
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -15,24 +17,44 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const projectId = parseId((await params).id, "项目 ID");
     await requireProjectAccess(user.id, projectId);
 
-    const afterIdRaw = new URL(request.url).searchParams.get("afterId");
-    const afterId = afterIdRaw ? Number(afterIdRaw) : null;
+    const searchParams = new URL(request.url).searchParams;
+    const afterId = searchParams.get("afterId") ? Number(searchParams.get("afterId")) : null;
+    const beforeId = searchParams.get("beforeId") ? Number(searchParams.get("beforeId")) : null;
 
-    const rows = Number.isInteger(afterId) && afterId! > 0
-      ? await db
+    let rows;
+    if (searchParams.get("pinned") === "1") {
+      rows = await db
+        .select()
+        .from(chatMessages)
+        .where(and(eq(chatMessages.projectId, projectId), eq(chatMessages.pinned, true)))
+        .orderBy(desc(chatMessages.id))
+        .limit(50);
+    } else if (Number.isInteger(afterId) && afterId! > 0) {
+      rows = await db
+        .select()
+        .from(chatMessages)
+        .where(and(eq(chatMessages.projectId, projectId), gt(chatMessages.id, afterId!)))
+        .orderBy(asc(chatMessages.id))
+        .limit(200);
+    } else if (Number.isInteger(beforeId) && beforeId! > 0) {
+      rows = (
+        await db
           .select()
           .from(chatMessages)
-          .where(and(eq(chatMessages.projectId, projectId), gt(chatMessages.id, afterId!)))
-          .orderBy(asc(chatMessages.id))
-          .limit(200)
-      : (
-          await db
-            .select()
-            .from(chatMessages)
-            .where(eq(chatMessages.projectId, projectId))
-            .orderBy(desc(chatMessages.id))
-            .limit(50)
-        ).reverse();
+          .where(and(eq(chatMessages.projectId, projectId), lt(chatMessages.id, beforeId!)))
+          .orderBy(desc(chatMessages.id))
+          .limit(50)
+      ).reverse();
+    } else {
+      rows = (
+        await db
+          .select()
+          .from(chatMessages)
+          .where(eq(chatMessages.projectId, projectId))
+          .orderBy(desc(chatMessages.id))
+          .limit(50)
+      ).reverse();
+    }
 
     return Response.json({ messages: await decorateMessages(rows, user.id) });
   } catch (error) {
@@ -46,7 +68,7 @@ async function decorateMessages(rows: (typeof chatMessages.$inferSelect)[], curr
   const ids = rows.map((m) => m.id);
 
   const likes = await db
-    .select({ messageId: chatLikes.messageId, userId: chatLikes.userId })
+    .select({ messageId: chatLikes.messageId, userId: chatLikes.userId, emoji: chatLikes.emoji })
     .from(chatLikes)
     .where(inArray(chatLikes.messageId, ids));
 
@@ -87,10 +109,14 @@ async function decorateMessages(rows: (typeof chatMessages.$inferSelect)[], curr
     const replyAuthor = reply ? authors.find((a) => a.id === reply.authorId) : null;
     const task = linkedTasks.find((t) => t.id === m.taskId);
     const att = m.attachmentId ? attRows.find((a) => a.id === m.attachmentId) : null;
+    // 表情回应按 emoji 分组（含我是否已回应）
+    const mine = likes.filter((l) => l.messageId === m.id && l.userId === currentUserId);
+    const reactionEmojis = [...new Set(likes.filter((l) => l.messageId === m.id).map((l) => l.emoji))];
     return {
       id: m.id,
       content: m.content,
       pinned: m.pinned,
+      recalled: m.recalled,
       taskId: m.taskId,
       replyToId: m.replyToId,
       createdAt: m.createdAt,
@@ -98,8 +124,11 @@ async function decorateMessages(rows: (typeof chatMessages.$inferSelect)[], curr
         id: m.authorId,
         displayName: author ? displayName(author) : "未知成员",
       },
-      likeCount: likes.filter((l) => l.messageId === m.id).length,
-      likedByMe: likes.some((l) => l.messageId === m.id && l.userId === currentUserId),
+      reactions: m.recalled ? [] : reactionEmojis.map((emoji) => ({
+        emoji,
+        count: likes.filter((l) => l.messageId === m.id && l.emoji === emoji).length,
+        mine: mine.some((l) => l.emoji === emoji),
+      })),
       replyTo: reply
         ? {
             id: reply.id,
@@ -165,7 +194,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       entityId: projectId,
     });
 
-    return Response.json({ message: await decorateMessages([message], user.id) }, { status: 201 });
+    const [decoratedMessage] = await decorateMessages([message], user.id);
+    return Response.json({ message: decoratedMessage }, { status: 201 });
   } catch (error) {
     return handleApiError(error);
   }

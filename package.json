@@ -23,6 +23,7 @@
     "db:add-direct-messages": "tsx db/add-direct-messages.ts",
     "db:add-docs": "tsx db/add-docs.ts",
     "db:add-chat-attachments": "tsx db/add-chat-attachments.ts",
+    "db:add-message-extras": "tsx db/add-message-extras.ts",
     "db:seed": "tsx db/seed.ts",
     "db:studio": "drizzle-kit studio"
   },

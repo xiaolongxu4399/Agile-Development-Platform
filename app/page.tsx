@@ -316,8 +316,8 @@ export default function WorkspacePage() {
       });
       await afterSaved([refreshChat()]);
     },
-    async toggleLike(messageId) {
-      await api(`/api/chat/${messageId}/like`, { method: "POST", json: {} });
+    async toggleLike(messageId, emoji) {
+      await api(`/api/chat/${messageId}/like`, { method: "POST", json: { emoji: emoji ?? "👍" } });
       await afterSaved([refreshChat()]);
     },
     async togglePin(messageId, pinned) {

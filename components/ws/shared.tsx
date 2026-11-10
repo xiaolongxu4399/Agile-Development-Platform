@@ -147,7 +147,7 @@ export interface WorkspaceStore {
   inviteMember(email: string): Promise<void>;
   toggleStar(projectId: number): Promise<void>;
   sendChat(content: string, opts?: { replyToId?: number; taskId?: number }): Promise<void>;
-  toggleLike(messageId: number): Promise<void>;
+  toggleLike(messageId: number, emoji?: string): Promise<void>;
   togglePin(messageId: number, pinned: boolean): Promise<void>;
   uploadProjectFile(file: File): Promise<string>;
   withdrawFile(id: number): Promise<void>;

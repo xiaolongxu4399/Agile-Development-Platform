@@ -194,9 +194,9 @@ export const comments = pgTable("comments", {
 
 /* ============ 项目内团队聊天 ============ */
 
-// 聊天消息表：项目频道内的消息流，支持回复、关联任务、置顶、@提及
+// 聊天消息表：项目频道内的消息流，支持回复、关联任务、置顶、@提及、文件消息与撤回
 // attachmentId 非空即文件消息（正文存原始文件名）；文件本体即项目文件（attachments），
-// 撤回文件后消息保留但卡片降级为「文件已撤回」
+// 撤回文件后消息保留但卡片降级为「文件已撤回」；recalled 置位后正文清空、仅显示占位灰字
 export const chatMessages = pgTable("chat_messages", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -205,17 +205,19 @@ export const chatMessages = pgTable("chat_messages", {
   replyToId: integer("reply_to_id").references((): AnyPgColumn => chatMessages.id, { onDelete: "cascade" }), // 回复的目标消息
   taskId: integer("task_id").references(() => tasks.id, { onDelete: "set null" }),   // 关联任务
   attachmentId: integer("attachment_id").references((): AnyPgColumn => attachments.id, { onDelete: "set null" }), // 文件消息
-  pinned: boolean("pinned").notNull().default(false), // 是否置顶（项目公告）
+  pinned: boolean("pinned").notNull().default(false), // 是否置顶（公告，可多条）
+  recalled: boolean("recalled").notNull().default(false), // 发送者两分钟内撤回
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
-// 消息赞同表：一条消息可被多人赞同（同一用户同一条只能赞一次，再点取消）
+// 消息表情回应表：同一条消息同一人可对多个表情各回应一次，再点取消（默认 👍 兼容旧数据）
 export const chatLikes = pgTable("chat_likes", {
   id: serial("id").primaryKey(),
   messageId: integer("message_id").notNull().references(() => chatMessages.id, { onDelete: "cascade" }),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  emoji: text("emoji").notNull().default("👍"),
   createdAt: timestamp("created_at").defaultNow(),
-}, (t) => [unique("chat_likes_message_user_uq").on(t.messageId, t.userId)]);
+}, (t) => [unique("chat_likes_message_user_emoji_uq").on(t.messageId, t.userId, t.emoji)]);
 
 /* ============ 日志与通知 ============ */
 
@@ -285,13 +287,16 @@ export const dmConversations = pgTable("dm_conversations", {
   check("dm_conversations_pair_check", sql`${t.userAId} < ${t.userBId}`)]);
 
 // 私聊消息：readAt 为接收方阅读时间（null 即对方未读），发送方可据此展示「已读」
-// attachmentId 非空即文件消息（正文存原始文件名，界面渲染为文件卡片）
+// attachmentId 非空即文件消息（正文存原始文件名，界面渲染为文件卡片）；
+// replyToId 支持引用回复；recalled 为发送者两分钟内撤回
 export const dmMessages = pgTable("dm_messages", {
   id: serial("id").primaryKey(),
   conversationId: integer("conversation_id").notNull().references(() => dmConversations.id, { onDelete: "cascade" }),
   senderId: integer("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   content: text("content").notNull(),
+  replyToId: integer("reply_to_id").references((): AnyPgColumn => dmMessages.id, { onDelete: "cascade" }),
   attachmentId: integer("attachment_id").references((): AnyPgColumn => dmAttachments.id, { onDelete: "set null" }),
+  recalled: boolean("recalled").notNull().default(false),
   readAt: timestamp("read_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 }, (t) => [index("dm_messages_conversation_idx").on(t.conversationId)]);

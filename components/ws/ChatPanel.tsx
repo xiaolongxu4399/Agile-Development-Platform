@@ -1,14 +1,17 @@
 "use client";
 
-// 团队聊天面板：置顶公告、日期分隔、@高亮、关联任务卡片、文件消息卡片、赞同/回复/置顶、
-// QQ 式聊天记录搜索（原文/链接/文件/人名分类）、输入区（@选人/发文件/表情）
+// 团队聊天面板（消息体验增强）：
+// 置顶公告（可多条+公告列表）、多表情回应、引用回复、消息撤回（2 分钟）、文件消息、
+// 聊天记录搜索（分类）+ 结果跳转上下文高亮、加载更早消息、今日要点摘要
 import { useEffect, useRef, useState } from "react";
-import { api, STATUS_TEXT, dayKey, fmtDateShort, fmtSize, fmtTime } from "@/lib/api-client";
-import { useWorkspace, Icon, Avatar } from "./shared";
+import { api, STATUS_TEXT, dayKey, fmtDateShort, fmtSize, fmtTime, type ChatMessage } from "@/lib/api-client";
+import { useWorkspace, Icon, Avatar, Modal } from "./shared";
 import { renderMentions } from "./helpers";
 import { toast } from "@/lib/toast";
 
 const EMOJIS = ["👍", "🎉", "😂", "🙏", "💪", "👀", "❤️", "🔥"];
+const REACTIONS = ["👍", "🎉", "😂", "🙏", "💪", "❤️"];
+const RECALL_WINDOW_MS = 2 * 60 * 1000;
 
 type ChatHit = {
   id: number;
@@ -19,6 +22,7 @@ type ChatHit = {
 };
 type SearchType = "all" | "text" | "link" | "file" | "author";
 const SEARCH_TABS: [SearchType, string][] = [["all", "全部"], ["text", "原文"], ["link", "链接"], ["file", "文件"], ["author", "人名"]];
+type ChatSummaryView = { date: string; summary: { messageCount: number; participants: string[]; tasks: string[]; files: string[]; links: string[]; openQuestions: number } };
 
 export function ChatPanel() {
   const ws = useWorkspace();
@@ -35,13 +39,26 @@ export function ChatPanel() {
   const [searchAuthor, setSearchAuthor] = useState<number | null>(null);
   const [hits, setHits] = useState<ChatHit[] | null>(null);
   const [searchErr, setSearchErr] = useState("");
+  const [pickFor, setPickFor] = useState<number | null>(null);
+  const [pinnedOpen, setPinnedOpen] = useState(false);
+  const [pinnedList, setPinnedList] = useState<ChatMessage[] | null>(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [summary, setSummary] = useState<ChatSummaryView | null>(null);
+  const [olderMessages, setOlderMessages] = useState<ChatMessage[] | null>(null);
+  const [noMoreOlder, setNoMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const searchReq = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const messages = ws.chat;
-  const pinned = messages.find((m) => m.pinned) ?? null;
+  // 展示的消息 = 本地翻页前缀 + store 最新窗口；轮询刷新时窗口仍来自 store，前缀保留
+  const storeMessages = ws.chat;
+  const messages = olderMessages
+    ? [...olderMessages, ...storeMessages.filter((m) => !olderMessages.some((o) => o.id === m.id))]
+    : storeMessages;
+  const pinned = messages.filter((m) => m.pinned && !m.recalled);
+  const latestPinned = pinned[pinned.length - 1] ?? null;
   const memberNames = ws.detail?.members.map((m) => m.displayName) ?? [];
   const projectId = project?.id ?? null;
 
@@ -49,13 +66,25 @@ export function ChatPanel() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, project?.id]);
+  }, [storeMessages.length, project?.id]);
 
-  useEffect(() => {
+  // 切换项目时清空输入与翻页状态（渲染期对齐，避免级联 effect）
+  const [seenProject, setSeenProject] = useState<number | null>(project?.id ?? null);
+  if ((project?.id ?? null) !== seenProject) {
+    setSeenProject(project?.id ?? null);
     setText("");
     setReplyTo(null);
     setHint("");
-  }, [project?.id]);
+    setNoMoreOlder(false);
+    setOlderMessages(null);
+  }
+
+  // 撤回窗口计时（避免渲染中直接调用 Date.now）
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // 聊天记录搜索：300ms 防抖；人名分类需先选成员；请求序号防过期结果覆盖
   useEffect(() => {
@@ -83,6 +112,97 @@ export function ChatPanel() {
     setSearchAuthor(null);
     setHits(null);
     setSearchErr("");
+  }
+
+  // 定位并高亮一条消息（搜索跳转）；DOM 提交有延迟，轻量重试
+  function flashMessage(id: number, tries = 0) {
+    const el = document.getElementById(`chat-m-${id}`);
+    if (el) {
+      el.scrollIntoView({ block: "center" });
+      el.classList.add("ws-flash");
+      setTimeout(() => el.classList.remove("ws-flash"), 1700);
+    } else if (tries < 12) {
+      setTimeout(() => flashMessage(id, tries + 1), 60);
+    }
+  }
+
+  // 跳转到任意历史消息：已加载直接定位，否则向前翻页（最多 10 页）
+  async function jumpTo(id: number) {
+    closeSearch();
+    if (messages.some((m) => m.id === id)) { flashMessage(id); return; }
+    let cursor = messages[0]?.id ?? id + 1;
+    for (let i = 0; i < 10; i++) {
+      try {
+        const d = await api<{ messages: ChatMessage[] }>(`/api/projects/${projectId}/chat?beforeId=${cursor}`);
+        if (d.messages.length === 0) { setNoMoreOlder(true); toast("该消息已无法加载"); return; }
+        const prefix = olderMessages ? [...d.messages, ...olderMessages.filter((o) => !d.messages.some((n) => n.id === o.id))] : d.messages;
+        setOlderMessages(prefix);
+        if (d.messages.length < 50) setNoMoreOlder(true);
+        if (d.messages.some((m) => m.id === id)) { flashMessage(id); return; }
+        if (d.messages.length < 50) { toast("已加载全部历史，未找到该消息"); return; }
+        cursor = d.messages[0].id;
+      } catch (e) {
+        toast((e as Error).message, "error");
+        return;
+      }
+    }
+    toast("历史记录过多，请缩小搜索范围");
+  }
+
+  // 加载更早的消息（保持阅读位置不跳动）
+  async function loadOlder() {
+    const first = messages[0];
+    if (!first || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const d = await api<{ messages: ChatMessage[] }>(`/api/projects/${projectId}/chat?beforeId=${first.id}`);
+      if (d.messages.length === 0) { setNoMoreOlder(true); return; }
+      if (d.messages.length < 50) setNoMoreOlder(true);
+      const el = scrollRef.current;
+      const prevHeight = el?.scrollHeight ?? 0;
+      const prevTop = el?.scrollTop ?? 0;
+      setOlderMessages(olderMessages ? [...d.messages, ...olderMessages] : d.messages);
+      setTimeout(() => {
+        const el2 = scrollRef.current;
+        if (el2) el2.scrollTop = el2.scrollHeight - prevHeight + prevTop;
+      }, 60);
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  async function openPinnedList() {
+    setPinnedOpen(true);
+    setPinnedList(null);
+    try {
+      const d = await api<{ messages: ChatMessage[] }>(`/api/projects/${projectId}/chat?pinned=1`);
+      setPinnedList(d.messages);
+    } catch (e) {
+      setPinnedList([]);
+      toast((e as Error).message, "error");
+    }
+  }
+
+  async function openSummary() {
+    setSummaryOpen(true);
+    setSummary(null);
+    try {
+      setSummary(await api<ChatSummaryView>(`/api/projects/${projectId}/chat/summary`));
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
+  }
+
+  async function recallMessage(id: number) {
+    try {
+      await api(`/api/chat/${id}/recall`, { method: "POST", json: {} });
+      await ws.refreshChat();
+      toast("已撤回");
+    } catch (e) {
+      toast((e as Error).message, "error");
+    }
   }
 
   if (!project) {
@@ -115,15 +235,16 @@ export function ChatPanel() {
     inputRef.current?.focus();
   }
 
-  let lastDay = "";
-
   return (
     <aside className="ws-chat">
       <div className="ws-chat-head">
         <Icon name="message" size={15} />
         <b>#{project.name}</b>
         <span>· {ws.detail?.members.length ?? project.members.length} 位成员</span>
-        <button className="ws-icon-btn" style={{ marginLeft: "auto" }} title="搜索聊天记录" aria-label="搜索聊天记录"
+        <button className="ws-icon-btn" style={{ marginLeft: "auto" }} title="今日要点" aria-label="今日要点" onClick={() => void openSummary()}>
+          <Icon name="list" size={14} />
+        </button>
+        <button className="ws-icon-btn" title="搜索聊天记录" aria-label="搜索聊天记录"
           onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}>
           <Icon name="search" size={14} />
         </button>
@@ -158,13 +279,14 @@ export function ChatPanel() {
         </div>
       )}
 
-      {!searchOpen && pinned && (
-        <div className="ws-pinned" title="置顶公告">
+      {!searchOpen && latestPinned && (
+        <button className="ws-pinned" title="查看全部公告" onClick={() => void openPinnedList()}>
           <span className="pin-ic"><Icon name="pin" size={13} /></span>
-          <span style={{ flex: 1 }}>
-            <b>{pinned.author.displayName}：</b>{pinned.content.slice(0, 80)}
+          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>
+            <b>{latestPinned.author.displayName}：</b>{latestPinned.content.slice(0, 60)}
           </span>
-        </div>
+          {pinned.length > 1 && <span className="ws-pinned-count">共 {pinned.length} 条</span>}
+        </button>
       )}
 
       {searchOpen ? (
@@ -174,12 +296,12 @@ export function ChatPanel() {
           {!searchErr && !(searchType === "author" && searchAuthor === null) && hits === null && <div className="ws-empty" style={{ margin: "20px 4px" }}>输入关键词开始搜索…</div>}
           {!searchErr && !(searchType === "author" && searchAuthor === null) && hits?.length === 0 && <div className="ws-empty" style={{ margin: "20px 4px" }}>没有找到匹配的聊天记录</div>}
           {!searchErr && !(searchType === "author" && searchAuthor === null) && hits?.map((hit) => (
-            <div key={hit.id} className="ws-hit">
+            <div key={hit.id} className="ws-hit ws-hit-jump" title="点击定位到原消息" onClick={() => void jumpTo(hit.id)}>
               <Avatar name={hit.author.displayName} colorKey={hit.author.id} />
               <div className="ws-hit-main">
                 <div className="ws-hit-head"><b>{hit.author.displayName}</b><span>{fmtDateShort(hit.createdAt)} {fmtTime(hit.createdAt)}</span></div>
                 {hit.attachment ? (
-                  <a className="ws-dm-file" href={`/api/files/${hit.attachment.id}`} title="点击下载">
+                  <a className="ws-dm-file" href={`/api/files/${hit.attachment.id}`} title="点击下载" onClick={(e) => e.stopPropagation()}>
                     <span className="ws-dm-file-ic"><Icon name="file" size={16} /></span>
                     <span className="ws-dm-file-main"><b>{hit.attachment.name}</b><small>{fmtSize(hit.attachment.size)} · 点击下载</small></span>
                     <Icon name="download" size={14} />
@@ -193,15 +315,23 @@ export function ChatPanel() {
         </div>
       ) : (
         <div className="ws-chat-scroll" ref={scrollRef}>
+          {!noMoreOlder && messages.length > 0 && (
+            <button className="ws-load-older" disabled={loadingOlder} onClick={() => void loadOlder()}>
+              {loadingOlder ? "加载中…" : "加载更早的消息"}
+            </button>
+          )}
+          {noMoreOlder && messages.length > 0 && <div className="ws-load-older done">已加载全部历史</div>}
           {messages.length === 0 && (
             <div className="ws-empty" style={{ margin: "20px 4px" }}>还没有消息，打个招呼吧 👋</div>
           )}
-          {messages.map((m) => {
+          {messages.map((m, i) => {
             const day = dayKey(m.createdAt);
-            const showSep = day !== lastDay;
-            lastDay = day;
+            const showSep = i === 0 || dayKey(messages[i - 1].createdAt) !== day;
+            const canRecall = m.author.id === ws.me.id && !m.recalled
+              && nowTick - new Date(m.createdAt).getTime() < RECALL_WINDOW_MS;
+            const thumbsUp = m.reactions.find((r) => r.emoji === "👍");
             return (
-              <div key={m.id}>
+              <div key={m.id} id={`chat-m-${m.id}`}>
                 {showSep && (
                   <div className="ws-date-sep"><span>{fmtDateShort(m.createdAt)}</span></div>
                 )}
@@ -209,38 +339,61 @@ export function ChatPanel() {
                   <Avatar name={m.author.displayName} colorKey={m.author.id} />
                   <div className="ws-msg-body">
                     <div className="ws-msg-head"><b>{m.author.displayName}</b><span>{fmtTime(m.createdAt)}</span></div>
-                    {m.replyTo && (
-                      <div className="ws-msg-reply">回复 {m.replyTo.authorName}：{m.replyTo.content}</div>
-                    )}
-                    {m.attachment ? (
-                      <a className="ws-dm-file" href={`/api/files/${m.attachment.id}`} title="点击下载">
-                        <span className="ws-dm-file-ic"><Icon name="file" size={16} /></span>
-                        <span className="ws-dm-file-main"><b>{m.attachment.name}</b><small>{fmtSize(m.attachment.size)} · 点击下载</small></span>
-                        <Icon name="download" size={14} />
-                      </a>
-                    ) : (
-                      <div className="ws-msg-content">{renderMentions(m.content, memberNames)}</div>
-                    )}
-                    {m.task && (
-                      <div className="ws-task-link" onClick={() => ws.openTask(m.task!.id)}>
-                        <span className="t-code">{m.task.code}</span>
-                        <span className="t-title">{m.task.title}</span>
-                        <span className={`ws-pill st-${m.task.status}`}>{STATUS_TEXT[m.task.status]}</span>
-                      </div>
-                    )}
-                    <div className="ws-msg-actions">
-                      <button className={m.likedByMe ? "liked" : ""} aria-label={m.likedByMe ? "取消赞同" : "赞同"} aria-pressed={m.likedByMe} title={m.likedByMe ? "取消赞同" : "赞同"} onClick={() => ws.toggleLike(m.id)}>
-                        <span aria-hidden="true">👍</span>{m.likeCount > 0 ? ` ${m.likeCount}` : ""}
-                      </button>
-                      <button onClick={() => { setReplyTo({ id: m.id, authorName: m.author.displayName, content: m.content.slice(0, 40) }); inputRef.current?.focus(); }}>
-                        回复
-                      </button>
-                      {ws.detail && (ws.detail.myRole === "owner" || ws.detail.myRole === "admin") && (
-                        <button onClick={() => ws.togglePin(m.id, !m.pinned)} title={m.pinned ? "取消置顶" : "置顶为公告"}>
-                          {m.pinned ? "取消置顶" : "置顶"}
-                        </button>
+                    {m.recalled ? (
+                      <div className="ws-recalled">{m.author.displayName} 撤回了一条消息</div>
+                    ) : (<>
+                      {m.replyTo && (
+                        <div className="ws-msg-reply">回复 {m.replyTo.authorName}：{m.replyTo.content}</div>
                       )}
-                    </div>
+                      {m.attachment ? (
+                        <a className="ws-dm-file" href={`/api/files/${m.attachment.id}`} title="点击下载">
+                          <span className="ws-dm-file-ic"><Icon name="file" size={16} /></span>
+                          <span className="ws-dm-file-main"><b>{m.attachment.name}</b><small>{fmtSize(m.attachment.size)} · 点击下载</small></span>
+                          <Icon name="download" size={14} />
+                        </a>
+                      ) : (
+                        <div className="ws-msg-content">{renderMentions(m.content, memberNames)}</div>
+                      )}
+                      {m.task && (
+                        <div className="ws-task-link" onClick={() => ws.openTask(m.task!.id)}>
+                          <span className="t-code">{m.task.code}</span>
+                          <span className="t-title">{m.task.title}</span>
+                          <span className={`ws-pill st-${m.task.status}`}>{STATUS_TEXT[m.task.status]}</span>
+                        </div>
+                      )}
+                      {m.reactions.length > 0 && (
+                        <div className="ws-reactions">
+                          {m.reactions.map((r) => (
+                            <button key={r.emoji} className={`ws-reaction ${r.mine ? "mine" : ""}`}
+                              title={r.mine ? "取消回应" : "回应"} onClick={() => ws.toggleLike(m.id, r.emoji)}>
+                              {r.emoji}{r.count > 1 ? ` ${r.count}` : ""}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {pickFor === m.id && (
+                        <div className="ws-react-pick" role="menu" aria-label="选择表情">
+                          {REACTIONS.map((e) => (
+                            <button key={e} onClick={() => { setPickFor(null); ws.toggleLike(m.id, e); }}>{e}</button>
+                          ))}
+                        </div>
+                      )}
+                      <div className="ws-msg-actions">
+                        <button className={thumbsUp?.mine ? "liked" : ""} aria-label="赞同" title="赞同" onClick={() => ws.toggleLike(m.id, "👍")}>
+                          <span aria-hidden="true">👍</span>{thumbsUp && thumbsUp.count > 0 ? ` ${thumbsUp.count}` : ""}
+                        </button>
+                        <button title="更多表情回应" onClick={() => setPickFor(pickFor === m.id ? null : m.id)}>😊 回应</button>
+                        <button onClick={() => { setReplyTo({ id: m.id, authorName: m.author.displayName, content: (m.attachment?.name ?? m.content).slice(0, 40) }); inputRef.current?.focus(); }}>
+                          回复
+                        </button>
+                        {canRecall && <button onClick={() => void recallMessage(m.id)}>撤回</button>}
+                        {ws.detail && (ws.detail.myRole === "owner" || ws.detail.myRole === "admin") && (
+                          <button onClick={() => ws.togglePin(m.id, !m.pinned)} title={m.pinned ? "取消置顶" : "置顶为公告"}>
+                            {m.pinned ? "取消置顶" : "置顶"}
+                          </button>
+                        )}
+                      </div>
+                    </>)}
                   </div>
                 </div>
               </div>
@@ -328,7 +481,49 @@ export function ChatPanel() {
           }}
         />
       </div>
+
+      {pinnedOpen && (
+        <Modal title="频道公告" onClose={() => setPinnedOpen(false)}>
+          {pinnedList === null && <div className="ws-empty">正在加载公告…</div>}
+          {pinnedList?.length === 0 && <div className="ws-empty">暂无公告</div>}
+          <div className="ws-pin-list">
+            {pinnedList?.map((p) => (
+              <div key={p.id} className="ws-pin-item">
+                <div className="ws-pin-main">
+                  <div className="ws-hit-head"><b>{p.author.displayName}</b><span>{fmtDateShort(p.createdAt)} {fmtTime(p.createdAt)}</span></div>
+                  <div className="ws-hit-content">{p.attachment ? `《${p.attachment.name}》` : p.content}</div>
+                </div>
+                {ws.detail && (ws.detail.myRole === "owner" || ws.detail.myRole === "admin") && (
+                  <button className="ws-btn" style={{ padding: "5px 10px", fontSize: 12, flexShrink: 0 }}
+                    onClick={() => { void ws.togglePin(p.id, false).then(() => openPinnedList()); }}>取消置顶</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {summaryOpen && (
+        <Modal title="今日要点" onClose={() => setSummaryOpen(false)}>
+          {summary === null && <div className="ws-empty">正在生成要点…</div>}
+          {summary && (
+            <div className="ws-sum">
+              <p className="ws-sum-line">{summary.date} · {summary.summary.messageCount} 条消息 · {summary.summary.participants.length} 人参与（{summary.summary.participants.join("、") || "—"}）</p>
+              {summary.summary.tasks.length > 0 && (
+                <p className="ws-sum-line"><b>提及任务：</b>{summary.summary.tasks.map((t) => <span key={t} className="ws-doc-chip" style={{ marginRight: 6 }}>{t}</span>)}</p>
+              )}
+              {summary.summary.files.length > 0 && (
+                <p className="ws-sum-line"><b>发送文件：</b>{summary.summary.files.join("、")}</p>
+              )}
+              {summary.summary.links.length > 0 && (
+                <p className="ws-sum-line"><b>分享链接：</b>{summary.summary.links.map((l, i) => <a key={i} href={l} target="_blank" rel="noopener noreferrer" style={{ marginRight: 8 }}>{l}</a>)}</p>
+              )}
+              <p className="ws-sum-line"><b>待跟进问题：</b>{summary.summary.openQuestions} 条{summary.summary.openQuestions > 0 ? "，记得回复" : ""}</p>
+              {summary.summary.messageCount === 0 && <div className="ws-empty">今天还没有消息</div>}
+            </div>
+          )}
+        </Modal>
+      )}
     </aside>
   );
 }
-

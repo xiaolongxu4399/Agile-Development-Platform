@@ -161,12 +161,12 @@ export type ChatMessage = {
   id: number;
   content: string;
   pinned: boolean;
+  recalled: boolean;
   taskId: number | null;
   replyToId: number | null;
   createdAt: string;
   author: { id: number; displayName: string };
-  likeCount: number;
-  likedByMe: boolean;
+  reactions: { emoji: string; count: number; mine: boolean }[];
   replyTo: { id: number; content: string; authorName: string } | null;
   task: { id: number; code: string; title: string; status: string } | null;
   attachment: { id: number; name: string; size: number } | null;
@@ -211,6 +211,8 @@ export type DmMessage = {
   senderName: string;
   mine: boolean;
   content: string;
+  recalled: boolean;
+  replyTo: { id: number; content: string; mine: boolean } | null;
   attachment: { id: number; name: string; size: number; mimeType: string | null } | null;
   readAt: string | null;
   createdAt: string;

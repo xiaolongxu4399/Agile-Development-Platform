@@ -82,6 +82,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         senderName: displayName(user),
         mine: true,
         content: message.content,
+        recalled: message.recalled,
+        replyTo: null,
         attachment: { id: attachment.id, name: attachment.originalName, size: attachment.size, mimeType: attachment.mimeType },
         readAt: message.readAt,
         createdAt: message.createdAt,
