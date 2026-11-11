@@ -124,19 +124,21 @@ npm run dev                 # 启动 http://localhost:3000
 
 消息对象含 `mine`（是否我发的）与 `readAt`（对方阅读时间，null 即未读，用于已读回执）。文件消息的 `attachment` 含 `{ id, name, size, mimeType }`，下载走 `GET /api/dm/files/{id}`。同一对用户只存一条会话（`user_a_id < user_b_id` 唯一约束）。
 
-### 云文档（v5 新增）
+### 云文档（v5 新增，v6 增强）
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/docs?projectId=` | 登录 | 我可访问的文档（即我所在团队全部项目的文档），按更新时间倒序 |
-| POST | `/api/docs` | 项目成员 | `{ projectId, title, content? }` 新建；写入项目日志 |
-| GET | `/api/docs/[id]` | 项目成员 | 文档全文（含 `canDelete`、创建者/更新者） |
-| PUT | `/api/docs/[id]` | 项目成员 | `{ title?, content? }` 保存；内容有变化时先快照旧版本（每篇保留最近 20 版） |
-| DELETE | `/api/docs/[id]` | 创建者/admin | 删除文档（级联删历史版本），写入项目日志 |
+| GET | `/api/docs?projectId=` | 登录 | 我可访问的文档（含 `folder` 分组字段），按更新时间倒序 |
+| POST | `/api/docs` | 项目成员 | `{ projectId, title, content?, folder? }` 新建；写入项目日志 |
+| GET | `/api/docs/[id]` | 项目成员 | 文档全文（含 `canDelete`、创建者/更新者、分组） |
+| PUT | `/api/docs/[id]` | 项目成员 | `{ title?, content?, folder? }` 保存；内容变化才快照（仅改分组不快照） |
+| DELETE | `/api/docs/[id]` | 创建者/admin | 删除文档（级联删历史版本与评论），写入项目日志 |
 | GET | `/api/docs/[id]/versions` | 项目成员 | 历史版本列表（新→旧，含全文与摘要） |
-| POST | `/api/docs/[id]/versions` | 项目成员 | `{ versionId }` 恢复到指定版本；当前内容先快照，恢复本身可撤销 |
+| POST | `/api/docs/[id]/versions` | 项目成员 | `{ versionId }` 恢复到指定版本；当前内容先快照，恢复可撤销 |
+| GET | `/api/docs/[id]/comments` | 项目成员 | **文档评论**列表（时间正序，含 `quote` 引用片段与作者） |
+| POST | `/api/docs/[id]/comments` | 项目成员 | `{ content, quote? }` 发表评论；通知文档创建者 + @提及的项目成员（`entityType=doc`，点击直达文档） |
 
-正文为 Markdown 子集（标题/粗斜体/行内代码/代码块/列表/引用/分隔线/http(s) 链接），渲染前整体 HTML 转义，无原始 HTML 注入。文档标题 ≤80 字，正文 ≤20 万字符。
+正文为 Markdown 子集（标题带锚点/粗斜体/行内代码/代码块/列表/引用/分隔线/http(s) 链接/**`[[任务编号]]` 任务引用卡片**），渲染前整体 HTML 转义。任务详情接口返回 `referencedDocs`（引用了该任务的文档）。文档标题 ≤80 字，正文 ≤20 万字符，分组 ≤30 字。
 
 ### 项目日志 / 通知 / 标签
 

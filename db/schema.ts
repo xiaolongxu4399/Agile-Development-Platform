@@ -321,11 +321,22 @@ export const docs = pgTable("docs", {
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   title: text("title").notNull(),                          // 标题（80 字以内）
   content: text("content").notNull().default(""),          // Markdown 正文
+  folder: text("folder"),                                  // 分组文件夹（空 = 未分组；单层，不做树）
   createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
   updatedById: integer("updated_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => [index("docs_project_idx").on(t.projectId)]);
+
+// 文档评论：项目成员对文档的批注；quote 为评论时选中的原文片段（可空）
+export const docComments = pgTable("doc_comments", {
+  id: serial("id").primaryKey(),
+  docId: integer("doc_id").notNull().references(() => docs.id, { onDelete: "cascade" }),
+  authorId: integer("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  quote: text("quote"),                                    // 引用的文档原文（≤200 字）
+  content: text("content").notNull(),                      // 评论内容
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [index("doc_comments_doc_idx").on(t.docId)]);
 
 // 文档历史版本：每次保存前快照旧内容；每篇文档只保留最近 MAX_DOC_VERSIONS 版
 export const docVersions = pgTable("doc_versions", {

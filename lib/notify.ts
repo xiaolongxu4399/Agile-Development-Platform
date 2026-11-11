@@ -11,7 +11,7 @@ export async function notify(input: {
   actorId: number;
   type: "assigned" | "mention" | "comment" | "dm";
   title: string;
-  entityType?: "task" | "project" | "dm";
+  entityType?: "task" | "project" | "dm" | "doc";
   entityId?: number;
   includeActor?: boolean;
 }, executor: Pick<typeof db, "insert"> = db) {
@@ -50,7 +50,7 @@ export async function notifyMentions(input: {
   actorId: number;
   members: { userId: number; name: string | null; studentId: string }[];
   title: string;
-  entityType?: "task" | "project";
+  entityType?: "task" | "project" | "doc";
   entityId?: number;
 }, executor: Pick<typeof db, "insert"> = db) {
   const ids = extractMentionIds(input.content, input.members);

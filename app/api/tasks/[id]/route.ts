@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  tasks, users, projects, sprints, labels, taskLabels, comments, attachments, activities, teamMembers, teams, taskCollaborators,
+  tasks, users, projects, sprints, labels, taskLabels, comments, attachments, activities, teamMembers, teams, taskCollaborators, docs,
 } from "@/db/schema";
 import {
   requireUser, parseBody, parseId, requireProjectAccess, ApiError, handleApiError,
@@ -80,6 +80,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       .orderBy(desc(activities.createdAt))
       .limit(100);
 
+    // 反向引用：哪些文档用 [[任务编号]] 引用了本任务（v6 文档协作）
+    const code = taskCode(project.key, task.number);
+    const referencedDocs = await db
+      .select({ id: docs.id, title: docs.title })
+      .from(docs)
+      .where(and(eq(docs.projectId, task.projectId), sql`${docs.content} like ${`%[[${code}]]%`}`))
+      .orderBy(desc(docs.updatedAt))
+      .limit(10);
+
     return Response.json({
       task: {
         ...task,
@@ -95,6 +104,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         comments: commentRows.map((c) => ({ ...c, authorDisplayName: displayName({ name: c.authorName, studentId: c.authorStudentId }) })),
         subtasks: subtaskRows.map((s) => ({ ...s, code: taskCode(project.key, s.number) })),
         files: fileRows,
+        referencedDocs,
         activities: activityRows.map((a) => ({ ...a, actorDisplayName: displayName({ name: a.actorName, studentId: a.actorStudentId }) })),
       },
     });

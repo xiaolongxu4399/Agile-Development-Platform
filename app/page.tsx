@@ -352,7 +352,7 @@ export default function WorkspacePage() {
       try {
         const target = await resolveNotificationTarget(notification, request.signal);
         if (!request.current()) return false;
-        if (target && target.section !== "dm" && !projects.some((project) => project.id === target.projectId)) {
+        if (target && target.section !== "dm" && target.section !== "docs" && !projects.some((project) => project.id === target.projectId)) {
           await loadResource<{ projects: ProjectSummary[] }>("projects", "/api/projects", (data) => setProjects(data.projects));
           if (!request.current()) return false;
         }
@@ -369,6 +369,9 @@ export default function WorkspacePage() {
         if (target.section === "dm") {
           setDmTargetId(target.dmConversationId);
           setRailView("messages");
+        } else if (target.section === "docs") {
+          setDocTargetId(target.docId);
+          setRailView("docs");
         } else {
           selectProject(target.projectId);
           setRailView("projects"); setFocusSection(target.section); setTaskSearch("");

@@ -144,6 +144,7 @@ export type TaskItem = {
   dueOn: string | null;
   labels: Label[];
   commentCount: number;
+  referencedDocs?: { id: number; title: string }[]; // 文档里用 [[编号]] 引用了本任务的文章
   attachmentCount: number;
   createdAt: string;
   updatedAt: string;
@@ -238,6 +239,7 @@ export type DocSummary = {
   projectId: number;
   projectName: string;
   title: string;
+  folder: string | null;
   excerpt: string;
   updatedByName: string | null;
   updatedAt: string;
@@ -249,6 +251,15 @@ export type DocDetail = DocSummary & {
   createdByName: string | null;
   createdAt: string;
   canEdit: boolean;
+};
+
+export type DocComment = {
+  id: number;
+  quote: string | null;
+  content: string;
+  createdAt: string;
+  author: { id: number; displayName: string };
+  mine: boolean;
 };
 
 export type DocVersion = {

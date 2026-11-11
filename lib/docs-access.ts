@@ -41,6 +41,7 @@ export async function loadDocDetail(userId: number, docId: number) {
       projectName: rest.projectName,
       title: doc.title,
       content: doc.content,
+      folder: doc.folder ?? null,
       excerpt: docExcerpt(doc.content),
       createdByName: rest.createdByStudentId
         ? displayName({ name: rest.createdByName, studentId: rest.createdByStudentId })

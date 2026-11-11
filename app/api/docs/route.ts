@@ -26,6 +26,7 @@ export async function GET(request: Request) {
         projectName: projects.name,
         title: docs.title,
         content: docs.content,
+        folder: docs.folder,
         updatedByName: updater.name,
         updatedByStudentId: updater.studentId,
         createdById: docs.createdById,
@@ -48,9 +49,10 @@ export async function GET(request: Request) {
         projectId: row.projectId,
         projectName: row.projectName,
         title: row.title,
+        folder: row.folder ?? null,
         excerpt: docExcerpt(row.content),
-        updatedByName: row.updatedByStudentId
-          ? displayName({ name: row.updatedByName, studentId: row.updatedByStudentId })
+        updatedByName: row.updatedByName
+          ? displayName({ name: row.updatedByName, studentId: row.updatedByStudentId! })
           : null,
         updatedAt: row.updatedAt,
         canDelete: row.createdById === user.id || roleAtLeast(row.myRole, "admin"),
@@ -65,6 +67,7 @@ const createSchema = z.object({
   projectId: z.number({ message: "请选择项目" }).int().positive("请选择项目"),
   title: z.string().trim().min(1, "请填写文档标题").max(80, "标题最长 80 字"),
   content: z.string().max(MAX_DOC_CONTENT_CHARS, "文档内容过长").optional(),
+  folder: z.string().trim().max(30, "分组名最长 30 字").optional().nullable(),
 });
 
 export async function POST(request: Request) {
@@ -79,6 +82,7 @@ export async function POST(request: Request) {
         projectId: body.projectId,
         title: body.title,
         content: body.content ?? "",
+        folder: body.folder || null,
         createdById: user.id,
         updatedById: user.id,
       })
@@ -98,6 +102,7 @@ export async function POST(request: Request) {
         projectName: project.name,
         title: doc.title,
         content: doc.content,
+        folder: doc.folder ?? null,
         excerpt: docExcerpt(doc.content),
         createdByName: displayName(user),
         updatedByName: displayName(user),

@@ -232,6 +232,7 @@ type TaskFull = {
   comments: { id: number; content: string; createdAt: string; authorId: number; authorDisplayName: string }[];
   subtasks: { id: number; code: string; title: string; status: string }[];
   files: { id: number; originalName: string; size: number }[];
+  referencedDocs?: { id: number; title: string }[];
   activities: { id: number; detail: string; createdAt: string; actorDisplayName: string }[];
 };
 
@@ -338,6 +339,18 @@ export function TaskDrawer() {
                   <div className="ws-desc">{task.description || "暂无任务描述"}</div>
                 </section>
                 {task.id === id && <TaskChecklist key={task.id} taskId={task.id} />}
+                {task.referencedDocs && task.referencedDocs.length > 0 && (
+                  <div className="ws-task-refdocs">
+                    <span className="ws-task-content-label">被引用于</span>
+                    <div className="ws-task-refdoc-list">
+                      {task.referencedDocs.map((d) => (
+                        <button key={d.id} title="打开文档" onClick={() => ws.openDoc(d.id)}>
+                          <Icon name="book" size={12} /> {d.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </section>
               <section className="ws-task-detail-section" id={`task-${task.id}-people`}>
                 <h3>参与成员</h3>

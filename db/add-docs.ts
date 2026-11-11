@@ -25,6 +25,17 @@ async function main() {
         created_at timestamptz NOT NULL DEFAULT now()
       )`;
       await tx`CREATE INDEX IF NOT EXISTS doc_versions_doc_idx ON doc_versions (doc_id)`;
+      // v6 文档协作：文件夹分组 + 文档评论
+      await tx`ALTER TABLE docs ADD COLUMN IF NOT EXISTS folder text`;
+      await tx`CREATE TABLE IF NOT EXISTS doc_comments (
+        id serial PRIMARY KEY,
+        doc_id integer NOT NULL REFERENCES docs(id) ON DELETE CASCADE,
+        author_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        quote text,
+        content text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )`;
+      await tx`CREATE INDEX IF NOT EXISTS doc_comments_doc_idx ON doc_comments (doc_id)`;
     });
     console.log("云文档数据表已就绪");
   } finally { await client.end(); }

@@ -2,7 +2,8 @@ import { api, ApiError, type NotificationItem } from "./api-client";
 
 type Target =
   | { projectId: number; section: "tasks" | "chat"; taskId?: number }
-  | { section: "dm"; dmConversationId: number };
+  | { section: "dm"; dmConversationId: number }
+  | { section: "docs"; docId: number };
 type FetchTarget = <T>(path: string, options?: { signal?: AbortSignal }) => Promise<T>;
 
 export async function resolveNotificationTarget(notification: NotificationItem, signal?: AbortSignal,
@@ -13,6 +14,11 @@ export async function resolveNotificationTarget(notification: NotificationItem, 
     // 私信通知：entityId 即会话 id，仅会话双方会收到，无需再请求校验
     if (notification.entityType === "dm") {
       return { section: "dm", dmConversationId: id };
+    }
+    // 文档评论/@提及：entityId 即文档 id，请求详情顺带校验访问权限
+    if (notification.entityType === "doc") {
+      const { doc } = await fetchTarget<{ doc: { id: number } }>(`/api/docs/${id}`, { signal });
+      return { section: "docs", docId: doc.id };
     }
     if (notification.entityType === "task") {
       const { task } = await fetchTarget<{ task: { id: number; projectId: number } }>(`/api/tasks/${id}`, { signal });
